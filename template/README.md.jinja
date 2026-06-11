@@ -1,6 +1,6 @@
 # {{ project_name }}
 
-A Python service generated from `template-python-gcp-service`.
+A Python project generated from [copier-template-python-service](https://github.com/vholley/copier-template-python-service).
 
 ## First-time setup
 
@@ -56,6 +56,27 @@ Then in **GitHub → repository settings**:
 | `make tf-plan ENV=<dev\|prod>` | Runs `terraform plan` for the given environment |
 | `make tf-apply ENV=<dev\|prod>` | Runs `terraform apply` for the given environment |
 {%- endif %}
+
+## Your first app
+
+```sh
+make new-app NAME=hello-world
+```
+
+Add a test to `apps/hello-world/tests/test_main.py`:
+
+```python
+def test_placeholder() -> None:
+    assert True
+```
+
+Verify everything passes:
+
+```sh
+make ci
+```
+
+Add your logic to `apps/hello-world/src/hello_world/main.py` and push a feature branch when ready.
 
 ## Project structure
 

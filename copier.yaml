@@ -19,10 +19,18 @@ python_version:
     - "3.13"
     - "3.14"
 
+app_framework:
+  type: str
+  help: Web framework for generated apps
+  choices:
+    - minimal
+    - fastapi
+  default: minimal
+
 use_gcp:
   type: bool
-  help: Include GCP deployment scaffolding (Cloud Run, Secret Manager, Cloud Logging)?
-  default: true
+  help: Add GCP deployment scaffolding (Cloud Run, Secret Manager, Cloud Logging)?
+  default: false
 
 gcp_project_dev:
   type: str
@@ -37,21 +45,13 @@ gcp_project_prod:
 include_docker:
   type: bool
   help: Include Dockerfile and container build scaffolding?
-  default: true
+  default: "{{ use_gcp }}"
 
 include_terraform:
   type: bool
   help: Include Terraform skeleton for GCP infrastructure?
   default: true
   when: "{{ use_gcp }}"
-
-app_framework:
-  type: str
-  help: Web framework for generated apps
-  choices:
-    - fastapi
-    - minimal
-  default: fastapi
 
 # File exclusion rules driven by answers
 _exclude:
