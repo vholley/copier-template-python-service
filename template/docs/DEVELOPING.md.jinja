@@ -209,6 +209,60 @@ git commit --no-verify
 
 Use rarely. The hooks keep `main` clean; bypassing pushes cleanup work to whoever notices later.
 
+## Debugging
+
+### Breakpoints
+
+Drop into the debugger at any line:
+
+```python
+import pdb; pdb.set_trace()
+```
+
+Or use VS Code: click in the gutter to set a breakpoint, then press `F5`. Set `"justMyCode": false` in `.vscode/launch.json` to step into library code.
+
+### pytest --pdb
+
+Drop into the debugger on the first test failure:
+
+```bash
+uv run pytest -x --pdb apps/my-app/tests/
+```
+
+`-x` stops after the first failure; `--pdb` opens the debugger at that point. `--tb=short` reduces noise from long tracebacks.
+
+### Structlog output
+
+In development, structlog writes colored key=value lines to stderr. To simulate Cloud Run's JSON output locally:
+
+```bash
+K_SERVICE=local uv run python -m apps.my_app.main 2>&1 | jq
+```
+
+`K_SERVICE` triggers the JSON formatter (the same condition Cloud Run sets). Pipe to `jq` for readable output.
+{% if use_gcp %}
+### Cloud Logging queries
+
+In the GCP console, filter logs with:
+
+```
+resource.type="cloud_run_revision"
+severity>=ERROR
+jsonPayload.event="<your event name>"
+```
+
+`jsonPayload.event` maps to the first positional argument of every structlog call (e.g. `log.info("payment_processed", ...)`).
+{% endif %}
+### Async debugging
+
+Enable extra coroutine tracking and slow callback warnings:
+
+```bash
+PYTHONASYNCIODEBUG=1 uv run python -m apps.my_app.main
+```
+
+This adds warnings when a coroutine takes longer than 100 ms in the event loop — useful for spotting blocking calls that should be awaited.
+
 ## VS Code
 
 The repo commits `.vscode/settings.json` and `.vscode/extensions.json`. On first opening the project, VS Code prompts to install the recommended extensions.

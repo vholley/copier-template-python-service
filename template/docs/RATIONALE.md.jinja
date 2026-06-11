@@ -78,6 +78,18 @@ The repo is partitioned by what each directory holds:
 
 The split keeps Python application code separate from infrastructure code, deployment scripts, and the new-app scaffolding. Each has its own tooling lifecycle.
 
+### Shared library design
+
+`libs/shared/` is the single shared library today. Some decisions about it:
+
+**When to move code from an app into `libs/shared`.** Move it when two or more apps need the same logic *and* that logic has stabilized. The key constraint is stabilized: moving code that is still being iterated creates coupling between apps at a surface that keeps changing. The right moment is when the shape is settled and the duplication cost has become concrete.
+
+**When to create a second library.** When a block of shared code has a distinct concern and a different consumer set. A test utilities library, for example, is only needed by test code; putting it in `libs/shared` forces it onto every app's dependency tree. If the boundary is real, the library separation is warranted.
+
+**One-way dependency rule.** Apps may depend on libs. Libs must not depend on apps. A lib that finds itself needing app-specific behavior is a signal that the abstraction is inverted — the logic belongs in the app, not the lib.
+
+**No versioning.** Workspace libs update in-place. When a shared interface changes, update every caller in the same commit. The lockfile captures the snapshot; `git log` is the changelog. The publish-and-bump cycle that external packages require does not apply inside a workspace.
+
 ### app-template
 
 `app-template/` is a directory tree containing the files a new app needs: a `pyproject.toml`, a `main.py`, a tests directory. The files contain `__APP_NAME__` placeholders where the app's name should go. `make new-app NAME=my-service` invokes `new-app.sh`, which copies the tree to `apps/my-service/` and replaces every `__APP_NAME__` with `my_service` (or whatever you named it) using `sed`.
