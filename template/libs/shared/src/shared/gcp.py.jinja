@@ -35,10 +35,13 @@ def get_secret(
     """
     project = project or os.environ.get("GCP_PROJECT")
     if not project:
-        raise ValueError(
-            "GCP project not provided and GCP_PROJECT env var is unset."
-        )
+        raise ValueError("GCP project not provided and GCP_PROJECT env var is unset.")
 
     secret_path = f"projects/{project}/secrets/{name}/versions/{version}"
-    response = secret_client().access_secret_version(name=secret_path)
+    # google-cloud-secretmanager ships incomplete type info for this method,
+    # which trips pyright's strict reportUnknownMemberType. The runtime call
+    # is correct; suppress the spurious stub-completeness warning.
+    response = secret_client().access_secret_version(  # pyright: ignore[reportUnknownMemberType]
+        name=secret_path
+    )
     return response.payload.data.decode("utf-8")

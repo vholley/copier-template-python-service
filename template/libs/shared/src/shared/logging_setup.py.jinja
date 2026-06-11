@@ -17,26 +17,22 @@ from typing import TYPE_CHECKING
 import structlog
 
 if TYPE_CHECKING:
-{% if use_gcp %}
+{%- if use_gcp %}
     from structlog.types import EventDict, Processor
-{% else %}
+{%- else %}
     from structlog.types import Processor
-{% endif %}
+{%- endif %}
+{%- if use_gcp %}
 
-{% if use_gcp %}
 
-def _cloud_logging_severity(
-    _logger: object, _method_name: str, event_dict: EventDict
-) -> EventDict:
+def _cloud_logging_severity(_logger: object, _method_name: str, event_dict: EventDict) -> EventDict:
     """Rename `level` to `severity` for Cloud Logging compatibility."""
     if "level" in event_dict:
         event_dict["severity"] = event_dict.pop("level").upper()
     return event_dict
 
 
-def _add_trace_context(
-    _logger: object, _method_name: str, event_dict: EventDict
-) -> EventDict:
+def _add_trace_context(_logger: object, _method_name: str, event_dict: EventDict) -> EventDict:
     """Format trace context as Cloud Logging expects.
 
     Apps that handle HTTP requests should put `trace_id` into the
@@ -47,12 +43,11 @@ def _add_trace_context(
     if trace_id:
         project = os.environ.get("GCP_PROJECT")
         if project:
-            event_dict["logging.googleapis.com/trace"] = (
-                f"projects/{project}/traces/{trace_id}"
-            )
+            event_dict["logging.googleapis.com/trace"] = f"projects/{project}/traces/{trace_id}"
     return event_dict
+{%- endif %}
 
-{% endif %}
+
 def configure_logging(*, level: str = "INFO") -> None:
     """Configure structlog for the application.
 
