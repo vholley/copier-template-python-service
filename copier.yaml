@@ -49,9 +49,8 @@ include_docker:
 
 include_terraform:
   type: bool
-  help: Include Terraform skeleton for GCP infrastructure?
-  default: true
-  when: "{{ use_gcp }}"
+  help: Include Terraform infrastructure scaffolding?
+  default: false
 
 # File exclusion rules driven by answers
 _exclude:
@@ -59,14 +58,13 @@ _exclude:
   - "__pycache__"
   - ".git"
   - "{% if not include_docker %}**/Dockerfile{% endif %}"
-  - "{% if not use_gcp %}infra{% endif %}"
+  - "{% if not include_terraform %}infra{% endif %}"
   - "{% if not use_gcp %}libs/shared/src/shared/gcp.py{% endif %}"
   - "{% if not use_gcp %}.github/workflows/deploy.yml{% endif %}"
   - "{% if not use_gcp %}scripts/deploy.sh{% endif %}"
-  - "{% if not include_terraform %}infra/terraform{% endif %}"
   - "{% if not include_terraform %}scripts/tf-bootstrap.sh{% endif %}"
-  - "{% if not include_terraform %}.github/workflows/terraform-plan.yml{% endif %}"
-  - "{% if not include_terraform %}.github/workflows/terraform-apply.yml{% endif %}"
+  - "{% if not include_terraform or not use_gcp %}.github/workflows/terraform-plan.yml{% endif %}"
+  - "{% if not include_terraform or not use_gcp %}.github/workflows/terraform-apply.yml{% endif %}"
 
 # Post-generation tasks
 # git rev-list -1 HEAD succeeds only when commits exist (i.e. an existing project

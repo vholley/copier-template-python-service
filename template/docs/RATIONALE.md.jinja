@@ -167,28 +167,37 @@ The WIF setup has three parts:
 
 At deploy time, GitHub Actions calls the `google-github-actions/auth` step. The step presents the OIDC token to GCP, GCP validates it, and the step gets back a short-lived access token for the deploy service account. Short-lived means the token expires within an hour; no one can leak a permanent credential because none exists.
 
+{% endif -%}
 {% if include_terraform -%}
+{% if not use_gcp %}
+## Infrastructure as code
+
+{% endif -%}
 ### Terraform
 
-Terraform is an infrastructure-as-code tool. You write configuration files (`.tf`) declaring the cloud resources you want (a Cloud Run service, an IAM binding, a Secret Manager secret, etc.), and Terraform talks to the cloud provider's API to make reality match that configuration.
+Terraform is an infrastructure-as-code tool. You write configuration files (`.tf`) declaring the cloud resources you want, and Terraform talks to the cloud provider's API to make reality match that configuration.
 
-Terraform keeps a **state file** that records what it created, what each resource's ID is, and what configuration was applied. When you run `terraform plan`, it diffs the state against your configuration and shows what will change. When you run `terraform apply`, it executes those changes. State lives in a backend; here, a GCS bucket per environment so that the state is shared across engineers and CI.
+Terraform keeps a **state file** that records what it created, what each resource's ID is, and what configuration was applied. When you run `terraform plan`, it diffs the state against your configuration and shows what will change. When you run `terraform apply`, it executes those changes. State lives in a remote backend so that it is shared across engineers and CI.
 
-Two GCP projects (dev and prod) exist from day one, resources need to be reproducible without tribal knowledge, and more than one engineer provisions infrastructure regularly. Terraform handles those concerns: every engineer sees the same resource definitions, every change is reviewed, and recreating an environment is a `terraform apply` away. The learning cost is concentrated upfront; the ongoing cost is small once the patterns are in place.
+Infrastructure defined in code is reproducible without tribal knowledge: every engineer sees the same resource definitions, every change is reviewed, and recreating an environment is a `terraform apply` away. The learning cost is concentrated upfront; the ongoing cost is small once the patterns are in place.
 
 ### Per-environment state
 
+{% if use_gcp -%}
 Each environment's Terraform state lives in its own GCS bucket, inside the matching GCP project: dev state in `{{ gcp_project_dev }}-tfstate`, prod state in `{{ gcp_project_prod }}-tfstate`. The `tf-bootstrap.sh` script creates these buckets the first time the project is set up.
 
 State corruption (a bad `terraform apply`, a partially-completed run, an accidentally-edited state file) affects only the environment whose bucket holds it. A mistake in dev cannot break prod. An alternative is to put all state in one ops project; per-environment isolation is simpler when there is no separate ops project.
+{%- else %}
+Each environment's Terraform state lives in a separate remote backend, configured in `infra/terraform/environments/*/backend.tf`. The `tf-bootstrap.sh` script walks through configuring the backend for your chosen provider and running `terraform init`.
 
+State corruption (a bad `terraform apply`, a partially-completed run, an accidentally-edited state file) affects only the environment whose backend holds it. A mistake in dev cannot break prod.
+{% endif %}
 ### Flat structure
 
-`environments/dev/main.tf` and `environments/prod/main.tf` are near-duplicates today. Each environment's full configuration is visible in one file: APIs to enable, service accounts to create, IAM roles to bind, the Artifact Registry repository, the Workload Identity Federation setup.
+`environments/dev/main.tf` and `environments/prod/main.tf` are near-duplicates today. Each environment's full configuration is visible in one file.
 
 A common refactoring at scale is to factor shared configuration into a `modules/environment/` Terraform module that both environments call. That is the right move once change patterns stabilize and duplication causes friction. Premature modularization adds indirection (module inputs, outputs, paths) without commensurate benefit while the surface area is small. The flat structure is faster to read and modify until then.
 
-{% endif -%}
 {% endif -%}
 ## Process
 

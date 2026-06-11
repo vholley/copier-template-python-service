@@ -179,6 +179,7 @@ This produces an image tagged `{{ project_name }}-foo:local`.
 
 Run it:
 
+{% if use_gcp -%}
 ```bash
 docker run --rm -p 8080:8080 \
   -e GCP_PROJECT={{ gcp_project_dev }} \
@@ -187,6 +188,11 @@ docker run --rm -p 8080:8080 \
 ```
 
 The volume mount makes your gcloud ADC available inside the container, so Secret Manager calls work the same way they would in Cloud Run.
+{%- else -%}
+```bash
+docker run --rm -p 8080:8080 {{ project_name }}-foo:local
+```
+{%- endif %}
 
 {% endif -%}
 ## Pre-commit hooks

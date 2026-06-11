@@ -111,7 +111,7 @@ copier asks the following questions:
 | `gcp_project_dev` | (required if `use_gcp`) | E.g. `my-project-dev` |
 | `gcp_project_prod` | (required if `use_gcp`) | E.g. `my-project-prod` |
 | `include_docker` | `false` | Adds Dockerfile and container build targets |
-| `include_terraform` | `true` if `use_gcp` | Adds `infra/terraform/` and Terraform workflows |
+| `include_terraform` | `false` | Adds `infra/terraform/` scaffolding; Terraform CI workflows require `use_gcp` |
 
 After generation, `cd` into the new project and run `./scripts/bootstrap.sh` to install tooling and verify the environment.
 
@@ -123,7 +123,7 @@ The template can add Google Cloud Platform scaffolding on top of the base toolch
 - `gcp_project_dev`: your dev GCP project ID (e.g. `my-project-dev`)
 - `gcp_project_prod`: your prod GCP project ID (e.g. `my-project-prod`)
 
-(`include_docker` defaults to `true` when `use_gcp` is `true`; `include_terraform` is only asked when `use_gcp` is `true`.)
+(`include_docker` defaults to `true` when `use_gcp` is `true`.)
 
 You get the full GCP stack on top of the base toolchain: Cloud Run deploy workflow, `gcp.py` (Secret Manager client), Cloud Logging integration, `Dockerfile`, and optionally `infra/terraform/` with Workload Identity Federation setup.
 
