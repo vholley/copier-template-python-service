@@ -5,7 +5,21 @@ A copier template for new Python services and jobs. Generates a project with uv-
 ## Prerequisites
 
 - macOS, Linux, or Windows (WSL 2 recommended for shell scripts on Windows)
-- copier installed: `uv tool install copier` (or `brew install copier` on macOS/Linux with Homebrew)
+- **uv** installed — manages Python and dependencies
+
+  macOS / Linux:
+
+  ```bash
+  curl -LsSf https://astral.sh/uv/install.sh | sh
+  ```
+
+  Windows (PowerShell):
+
+  ```powershell
+  powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+  ```
+
+- **copier** installed: `uv tool install copier` (or `brew install copier` on macOS/Linux with Homebrew)
 
 ## GitHub authentication
 
