@@ -55,7 +55,10 @@ fix:  ## Apply ruff autofixes and format
 
 .PHONY: test
 test:  ## Run pytest with coverage
-	$(PYTEST) --cov --cov-report=term-missing
+	# A freshly generated project has no apps yet, so pytest collects nothing
+	# and exits 5. Tolerate that one code; any real test failure (exit 1) still
+	# fails the target.
+	$(PYTEST) --cov --cov-report=term-missing || [ $$? -eq 5 ]
 
 .PHONY: format-check
 format-check:  ## Verify code is formatted (no changes applied)
