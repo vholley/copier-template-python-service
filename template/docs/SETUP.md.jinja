@@ -4,41 +4,63 @@ How to set up a development machine to work on `{{ project_name }}`. Covers tool
 
 After installing the tools in this document, `scripts/bootstrap.sh` handles the Python and project-specific parts.
 
-## macOS prerequisites
+## Prerequisites
 
-### Homebrew
+### macOS
 
-Homebrew is macOS's package manager. Install from <https://brew.sh/> if not already present:
-
-```bash
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-```
-
-Verify:
-
-```bash
-brew --version
-```
-
-### Xcode Command Line Tools
-
-Git and several build tools ship with Xcode Command Line Tools. If `git --version` fails:
+**Xcode Command Line Tools** provide Git and essential build tools. If `git --version` fails:
 
 ```bash
 xcode-select --install
 ```
 
+**Homebrew** is the recommended package manager for installing optional tools (gcloud, Terraform, etc.):
+
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+```
+
+### Linux
+
+Git and curl are required and usually pre-installed. Verify:
+
+```bash
+git --version && curl --version
+```
+
+If missing, install with your distribution's package manager (e.g. `sudo apt install git curl` on Debian/Ubuntu).
+
+### Windows
+
+The project's shell scripts (`bootstrap.sh`, `new-app.sh`, etc.) require a Unix-compatible shell. **WSL 2** (Windows Subsystem for Linux) is strongly recommended — it runs a full Linux environment natively inside Windows.
+
+To set up WSL 2, run in an elevated PowerShell prompt, then restart:
+
+```powershell
+wsl --install
+```
+
+After restarting, complete the Linux distro setup, then open a WSL terminal and follow the **Linux** instructions above for all subsequent steps.
+
 ## Python toolchain
 
 ### uv
 
-uv manages Python versions, virtual environments, and dependencies. Install:
+uv manages Python versions, virtual environments, and dependencies.
+
+**macOS / Linux (and Windows via WSL):**
 
 ```bash
-brew install uv
+curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-Verify:
+**Windows (native PowerShell):**
+
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+
+Restart your terminal after installing. Verify:
 
 ```bash
 uv --version
@@ -49,17 +71,26 @@ uv installs Python interpreters on demand; you do not need to install Python sep
 
 ## Containers
 
-### Docker Desktop
+### Docker
 
-Docker Desktop bundles the Docker engine, CLI, and a UI for managing containers. Required for `make build` and for running app images locally.
+Docker is required for `make build` and for running app images locally.
 
-Install:
+**macOS / Windows:** Install [Docker Desktop](https://www.docker.com/products/docker-desktop/). Launch it after installation — the daemon must be running before any `docker` command works.
+
+Recommended Docker Desktop settings (Preferences → Resources):
+
+- 4 GB RAM minimum, 8 GB if you can spare it
+- 2 CPUs minimum
+- Disk image size 60 GB+ (images and build cache add up)
+
+**Linux:**
 
 ```bash
-brew install --cask docker
+curl -fsSL https://get.docker.com | sh
+sudo usermod -aG docker $USER
 ```
 
-Then launch Docker Desktop from Applications. The daemon must be running before any `docker` command works; you'll see a whale icon in the menu bar when it's up.
+Log out and back in for the group change to take effect.
 
 Verify:
 
@@ -67,14 +98,6 @@ Verify:
 docker --version
 docker ps   # should succeed without errors
 ```
-
-If you see "Cannot connect to the Docker daemon", Docker Desktop isn't running. Launch it from Applications.
-
-Recommended Docker Desktop settings (Preferences → Resources):
-
-- 4 GB RAM minimum, 8 GB if you can spare it
-- 2 CPUs minimum
-- Disk image size 60 GB+ (images and build cache add up)
 
 ### Docker Hub sign-in
 
@@ -88,15 +111,24 @@ Docker Desktop prompts for a Docker Hub login on first launch. You can skip this
 
 The gcloud CLI talks to Google Cloud Platform. Required for `make deploy` (pushes container images to Artifact Registry, deploys to Cloud Run) and for any direct GCP work.
 
-Install:
+**macOS (Homebrew):**
 
 ```bash
 brew install --cask google-cloud-sdk
 ```
 
-After install, restart your shell or run `source ~/.zshrc` (or `~/.bash_profile`).
+**Linux:**
 
-Verify:
+```bash
+curl https://sdk.cloud.google.com | bash
+exec -l $SHELL
+```
+
+Or follow the [official guide](https://cloud.google.com/sdk/docs/install#linux) for your distribution's package manager (apt, dnf, etc.).
+
+**Windows:** Download the [Google Cloud SDK installer](https://cloud.google.com/sdk/docs/install#windows) and run it.
+
+After install, restart your shell. Verify:
 
 ```bash
 gcloud --version
@@ -130,9 +162,24 @@ ADC expires periodically. If `make deploy` or local Python code fails with auth 
 
 Terraform manages cloud resources via declarative config files. Required for `make tf-plan` and `make tf-apply`.
 
+**macOS (Homebrew):**
+
 ```bash
 brew install terraform
 ```
+
+**Linux (Debian / Ubuntu):**
+
+```bash
+wget -O - https://apt.releases.hashicorp.com/gpg | \
+  sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
+echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] \
+  https://apt.releases.hashicorp.com $(lsb_release -cs) main" | \
+  sudo tee /etc/apt/sources.list.d/hashicorp.list
+sudo apt update && sudo apt install terraform
+```
+
+**Other Linux / Windows:** Download a pre-built binary from [releases.hashicorp.com/terraform](https://releases.hashicorp.com/terraform/) and place it on your `PATH`.
 
 Verify:
 
@@ -140,25 +187,29 @@ Verify:
 terraform --version
 ```
 
-This project requires Terraform 1.10 or newer. If `brew install terraform` gives you an older version, run `brew upgrade terraform`.
+This project requires Terraform 1.10 or newer.
 
 ### tflint (optional)
 
-A linter for Terraform configurations. Not required, but useful for catching issues before `terraform plan`:
+A linter for Terraform configurations. Not required, but useful for catching issues before `terraform plan`.
 
-```bash
-brew install tflint
-```
+**macOS / Linux (Homebrew):** `brew install tflint`
+
+**Other:** See [github.com/terraform-linters/tflint](https://github.com/terraform-linters/tflint#installation).
 {% endif %}
 
 ## Project tooling
 
 ### pre-commit
 
-pre-commit runs linters and formatters on staged files before each commit. `bootstrap.sh` installs it into the project's hooks directory. To make the `pre-commit` command available globally (for running checks manually or working in other repos):
+pre-commit runs linters and formatters on staged files before each commit. `bootstrap.sh` installs it into the project's hooks directory. To make the `pre-commit` command available globally:
 
 ```bash
+# macOS / Linux with Homebrew
 brew install pre-commit
+
+# any platform via uv
+uv tool install pre-commit
 ```
 
 ### copier (template updates)
@@ -166,7 +217,11 @@ brew install pre-commit
 Required only when you want to pull the latest template changes into the project via `copier update --trust`:
 
 ```bash
+# macOS / Linux with Homebrew
 brew install copier
+
+# any platform via uv
+uv tool install copier
 ```
 
 ## AI tooling
@@ -216,12 +271,18 @@ If `make ci` passes, your machine is set up correctly.
 
 ### `uv: command not found` after install
 
-Restart your shell, or run `source ~/.zshrc` (or your shell's rc file). If still missing, check that `/opt/homebrew/bin` (Apple Silicon) or `/usr/local/bin` (Intel) is in your `PATH`.
+Restart your shell, or source your shell's rc file (`~/.zshrc`, `~/.bashrc`, etc.). If still missing:
+
+- **macOS (Apple Silicon):** check `/opt/homebrew/bin` is in `PATH`
+- **macOS (Intel):** check `/usr/local/bin` is in `PATH`
+- **Linux / WSL:** check `~/.local/bin` is in `PATH` (`export PATH="$HOME/.local/bin:$PATH"`)
 {% if include_docker %}
 
 ### `docker: Cannot connect to the Docker daemon`
 
-Docker Desktop isn't running. Launch it from Applications and wait for the whale icon to appear in the menu bar with "Docker Desktop is running".
+**macOS / Windows:** Docker Desktop isn't running. Launch it and wait for the status indicator to show "Docker Desktop is running".
+
+**Linux:** The Docker daemon may not be started. Run `sudo systemctl start docker` (or enable it permanently with `sudo systemctl enable --now docker`).
 
 ### `make build` fails with "no space left on device"
 
