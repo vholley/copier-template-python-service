@@ -1,6 +1,6 @@
 # copier-template-python-service
 
-A copier template for new Python services and jobs. Generates a project with uv-managed dependencies, ruff and pyright in strict mode, pre-commit hooks, GitHub Actions CI, optional Dockerfile and Terraform scaffolding, and a shared library wired for Cloud Logging and Secret Manager.
+A copier template for Python projects. Generates a project with uv-managed dependencies, ruff and pyright in strict mode, pre-commit hooks, and GitHub Actions CI. Optionally adds GCP deployment scaffolding (Cloud Run, Secret Manager, Cloud Logging), Docker, and Terraform.
 
 ## Prerequisites
 
@@ -106,26 +106,26 @@ copier asks the following questions:
 |---|---|---|
 | `project_name` | (required) | Kebab-case, e.g. `my-python-service` |
 | `python_version` | `3.14` | `3.13` is the fallback choice |
-| `use_gcp` | `true` | Adds Cloud Run deployment, Secret Manager, Cloud Logging |
+| `app_framework` | `minimal` | `minimal` or `fastapi` |
+| `use_gcp` | `false` | Adds Cloud Run deployment, Secret Manager, Cloud Logging |
 | `gcp_project_dev` | (required if `use_gcp`) | E.g. `my-project-dev` |
 | `gcp_project_prod` | (required if `use_gcp`) | E.g. `my-project-prod` |
-| `include_docker` | `true` | Adds Dockerfile and container build targets |
+| `include_docker` | `false` | Adds Dockerfile and container build targets |
 | `include_terraform` | `true` if `use_gcp` | Adds `infra/terraform/` and Terraform workflows |
-| `app_framework` | `fastapi` | `fastapi` or `minimal` |
 
 After generation, `cd` into the new project and run `./scripts/bootstrap.sh` to install tooling and verify the environment.
 
-## Lightweight Python (no GCP)
+## GCP deployment
 
-The template also works for Python projects that don't deploy to GCP: internal scripts, CLI tools, libraries, data work. Answer the copier questions like this:
+The template can add Google Cloud Platform scaffolding on top of the base toolchain. Answer the copier questions like this:
 
-- `use_gcp`: `false`
-- `include_docker`: `false`
-- `app_framework`: `minimal`
+- `use_gcp`: `true`
+- `gcp_project_dev`: your dev GCP project ID (e.g. `my-project-dev`)
+- `gcp_project_prod`: your prod GCP project ID (e.g. `my-project-prod`)
 
-(`include_terraform` is only asked when `use_gcp` is true, so it disappears.)
+(`include_docker` defaults to `true` when `use_gcp` is `true`; `include_terraform` is only asked when `use_gcp` is `true`.)
 
-You get the same toolchain (uv, ruff, pyright strict, pytest, pre-commit, VS Code config, GitHub Actions CI), minus the GCP-specific scaffolding: `infra/`, `Dockerfile`, deploy workflow, `gcp.py`, and Cloud Logging integration.
+You get the full GCP stack on top of the base toolchain: Cloud Run deploy workflow, `gcp.py` (Secret Manager client), Cloud Logging integration, `Dockerfile`, and optionally `infra/terraform/` with Workload Identity Federation setup.
 
 ## Update an existing project from the template
 

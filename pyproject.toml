@@ -1,0 +1,13 @@
+[project]
+name = "copier-template-python-service"
+version = "0.0.0"
+requires-python = ">=3.13"
+
+[dependency-groups]
+dev = [
+    "copier>=9.0",
+    "pytest>=8.3",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
