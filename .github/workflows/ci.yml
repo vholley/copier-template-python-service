@@ -25,39 +25,41 @@ jobs:
         include:
           - label: minimal-no-gcp
             args: >-
-              project_name=test-project
-              app_framework=minimal
-              use_gcp=false
-              include_docker=false
+              -d project_name=test-project
+              -d app_framework=minimal
+              -d use_gcp=false
+              -d include_docker=false
           - label: fastapi-no-gcp
             args: >-
-              project_name=test-project
-              app_framework=fastapi
-              use_gcp=false
-              include_docker=false
+              -d project_name=test-project
+              -d app_framework=fastapi
+              -d use_gcp=false
+              -d include_docker=false
           - label: fastapi-gcp
             args: >-
-              project_name=test-project
-              app_framework=fastapi
-              use_gcp=true
-              include_docker=true
-              gcp_project_dev=my-project-dev
-              gcp_project_prod=my-project-prod
+              -d project_name=test-project
+              -d app_framework=fastapi
+              -d use_gcp=true
+              -d include_docker=true
+              -d gcp_project_dev=my-project-dev
+              -d gcp_project_prod=my-project-prod
           - label: minimal-gcp
             args: >-
-              project_name=test-project
-              app_framework=minimal
-              use_gcp=true
-              include_docker=true
-              gcp_project_dev=my-project-dev
-              gcp_project_prod=my-project-prod
+              -d project_name=test-project
+              -d app_framework=minimal
+              -d use_gcp=true
+              -d include_docker=true
+              -d gcp_project_dev=my-project-dev
+              -d gcp_project_prod=my-project-prod
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v4
       - name: Install copier
         run: uv tool install copier
       - name: Generate project
-        run: copier copy --trust --defaults . /tmp/test-project -- ${{ matrix.args }}
+        # --vcs-ref=HEAD so we test the checked-out branch, not the latest
+        # release tag (copier defaults to the newest tag for git templates).
+        run: copier copy --trust --defaults --vcs-ref=HEAD . /tmp/test-project ${{ matrix.args }}
       - name: Run make ci
         working-directory: /tmp/test-project
         run: uv sync && make ci

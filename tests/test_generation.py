@@ -39,6 +39,9 @@ def _generate(dest: Path, **overrides: Any) -> Path:
         overwrite=True,
         unsafe=True,
         quiet=True,
+        # Test the working tree's HEAD, not the latest release tag (which
+        # is what copier uses by default for a git template).
+        vcs_ref="HEAD",
     )
     return dest
 
