@@ -47,10 +47,3 @@ Non-breaking: adding new questions (they get defaults), adding new files, editin
 ## Documentation
 
 Update `docs/RATIONALE.md.jinja` alongside any structural change (new tool, new pattern, removed component). RATIONALE explains *why* each choice was made; it should stay current with the template.
-
-## PR checklist
-
-- [ ] All four copier combinations generate cleanly and pass `make ci`
-- [ ] `docs/RATIONALE.md.jinja` updated if the change is structural
-- [ ] No company references, personal data, or internal project IDs in template files
-- [ ] Commit message follows conventional commits (`feat:`, `fix:`, `docs:`, `chore:`, etc.)
