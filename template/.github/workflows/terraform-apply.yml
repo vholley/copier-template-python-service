@@ -1,0 +1,60 @@
+name: Terraform Apply
+
+on:
+  push:
+    branches: [develop, main]
+    paths:
+      - 'infra/terraform/**'
+      - '.github/workflows/terraform-apply.yml'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment'
+        required: true
+        type: choice
+        options: [dev, prod]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  resolve-env:
+    name: resolve environment
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      environment: ${{ steps.env.outputs.environment }}
+    steps:
+      - id: env
+        run: |
+          if [[ -n "${{ inputs.environment }}" ]]; then
+            echo "environment=${{ inputs.environment }}" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "environment=prod" >> $GITHUB_OUTPUT
+          else
+            echo "environment=dev" >> $GITHUB_OUTPUT
+          fi
+
+  apply:
+    name: apply (${{ needs.resolve-env.outputs.environment }})
+    needs: resolve-env
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: ${{ needs.resolve-env.outputs.environment }}
+    defaults:
+      run:
+        working-directory: infra/terraform/environments/${{ needs.resolve-env.outputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.TERRAFORM_SERVICE_ACCOUNT }}
+
+      - uses: hashicorp/setup-terraform@v3
+
+      - run: terraform init
+      - run: terraform apply -auto-approve

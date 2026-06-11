@@ -1,0 +1,18 @@
+{
+    "recommendations": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "charliermarsh.ruff",
+        "tamasfe.even-better-toml",
+        "redhat.vscode-yaml",
+        "EditorConfig.EditorConfig",
+        "github.vscode-github-actions",
+        "mikestead.dotenv"
+        {%- if include_docker %},
+        "ms-azuretools.vscode-docker"
+        {%- endif %}
+        {%- if include_terraform %},
+        "hashicorp.terraform"
+        {%- endif %}
+    ]
+}

@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Deploy an app to Cloud Run.
+# Usage: scripts/deploy.sh <app_name> <env>
+
+if [[ $# -ne 2 ]]; then
+    echo "Usage: $0 <app_name> <env>" >&2
+    echo "  env: dev | prod" >&2
+    exit 1
+fi
+
+APP_NAME="$1"
+ENV="$2"
+
+case "$ENV" in
+    dev)  PROJECT="{{ gcp_project_dev }}"  ;;
+    prod) PROJECT="{{ gcp_project_prod }}" ;;
+    *)    echo "Error: env must be 'dev' or 'prod'" >&2; exit 1 ;;
+esac
+
+REGION="us-central1"
+REPO="{{ project_name }}"
+IMAGE="$REGION-docker.pkg.dev/$PROJECT/$REPO/$APP_NAME"
+TAG="$(git rev-parse --short HEAD)"
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$REPO_ROOT"
+
+if [[ ! -d "apps/$APP_NAME" ]]; then
+    echo "Error: apps/$APP_NAME does not exist" >&2
+    exit 1
+fi
+
+echo "==> Configuring docker auth for Artifact Registry"
+gcloud auth configure-docker "$REGION-docker.pkg.dev" --quiet
+
+echo "==> Building $IMAGE:$TAG"
+docker build -t "$IMAGE:$TAG" -t "$IMAGE:latest" -f "apps/$APP_NAME/Dockerfile" .
+
+echo "==> Pushing image"
+docker push "$IMAGE:$TAG"
+docker push "$IMAGE:latest"
+
+echo "==> Deploying to Cloud Run ($PROJECT)"
+gcloud run deploy "$APP_NAME" \
+    --project="$PROJECT" \
+    --region="$REGION" \
+    --image="$IMAGE:$TAG" \
+    --platform=managed \
+    --no-allow-unauthenticated

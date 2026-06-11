@@ -1,0 +1,138 @@
+# {{ project_name }}
+
+A Python service generated from `template-python-gcp-service`.
+
+## First-time setup
+
+```sh
+./scripts/bootstrap.sh
+```
+
+`bootstrap.sh` installs uv (if missing), pins Python {{ python_version }}, installs all dependencies, installs pre-commit hooks{% if use_gcp %}, and verifies gcloud authentication against `{{ gcp_project_dev }}`{% endif %}. Re-run any time to verify environment state.
+
+## Initializing your GitHub repository
+
+Run these steps once after generation to set up Git Flow and push to GitHub:
+
+```sh
+# 1. Make the initial commit on develop
+git add .
+git commit -m "chore: initial commit"
+
+# 2. Create main from develop
+git checkout -b main
+git checkout develop
+
+# 3. Push both branches
+git remote add origin <your-github-repo-url>
+git push -u origin develop main
+```
+
+Then in **GitHub → repository settings**:
+
+- **Branches → Add branch ruleset** for both `main` and `develop`:
+  - Require a pull request before merging
+  - Require the `CI` status check to pass
+  - Require branches to be up to date before merging
+- **Environments** — see [GitHub repository setup](#github-repository-setup) below.
+
+## Day-to-day commands
+
+| Command | What it does |
+|---|---|
+| `make new-app NAME=<name>` | Scaffolds a new app under `apps/<name>/` |
+| `make test` | Runs `pytest` across the workspace |
+| `make lint` | Runs `ruff check` |
+| `make typecheck` | Runs `pyright` in strict mode |
+| `make fix` | Applies `ruff` autofixes and formats |
+| `make ci` | Runs lint + typecheck + test (matches CI exactly) |
+{%- if include_docker %}
+| `make build NAME=<name>` | Builds the Docker image for `apps/<name>` |
+{%- endif %}
+{%- if use_gcp %}
+| `make deploy NAME=<name> ENV=<dev\|prod>` | Deploys `apps/<name>` to the given environment |
+{%- endif %}
+{%- if include_terraform %}
+| `make tf-plan ENV=<dev\|prod>` | Runs `terraform plan` for the given environment |
+| `make tf-apply ENV=<dev\|prod>` | Runs `terraform apply` for the given environment |
+{%- endif %}
+
+## Project structure
+
+```
+{{ project_name }}/
+├── apps/             # one directory per service or job
+├── libs/shared/      # shared library used across apps
+{%- if include_terraform %}
+├── infra/terraform/  # GCP infrastructure
+{%- endif %}
+├── scripts/          # operational scripts
+└── ...
+```
+
+Run `make new-app NAME=<name>` to add a new app. The generated app is wired into the workspace automatically.
+
+## Manual fallback
+
+If `scripts/bootstrap.sh` fails, the manual equivalent is:
+
+1. Install uv: `curl -LsSf https://astral.sh/uv/install.sh | sh`
+2. Pin Python: `uv python install {{ python_version }}`
+3. Sync dependencies: `uv sync`
+4. Install pre-commit hooks: `uv run pre-commit install`
+{%- if use_gcp %}
+5. Authenticate gcloud: `gcloud auth application-default login`
+6. Set default project: `gcloud config set project {{ gcp_project_dev }}`
+{%- endif %}
+{% if use_gcp %}
+## GitHub repository setup
+
+Deployments authenticate to GCP via Workload Identity Federation. Follow these steps in order — Terraform must run first to produce the values you need.
+
+**Step 1: Apply Terraform for each environment.**
+
+```sh
+make tf-apply ENV=dev
+make tf-apply ENV=prod
+```
+
+**Step 2: Capture the outputs.**
+
+```sh
+cd infra/terraform/environments/dev && terraform output
+cd infra/terraform/environments/prod && terraform output
+```
+
+**Step 3: Create two GitHub Environments** (`dev` and `prod`) under repository settings → Environments, and set these variables in each:
+
+| Variable | `dev` value | `prod` value | Source |
+|---|---|---|---|
+| `GCP_PROJECT` | `{{ gcp_project_dev }}` | `{{ gcp_project_prod }}` | Set manually |
+| `WIF_PROVIDER` | (from Terraform output) | (from Terraform output) | `terraform output wif_provider` |
+| `DEPLOY_SERVICE_ACCOUNT` | (from Terraform output) | (from Terraform output) | `terraform output deploy_sa_email` |
+{% if include_terraform -%}
+| `TERRAFORM_SERVICE_ACCOUNT` | (from Terraform output) | (from Terraform output) | `terraform output terraform_sa_email` |
+{% endif -%}
+
+**Step 4:** Configure the `prod` environment with a required-reviewers protection rule so production deploys require explicit approval.
+{% endif %}
+## Updating from the template
+
+To pull in template improvements (tooling updates, new conventions, CI fixes):
+
+```sh
+copier update --trust --skip-answered
+```
+
+`--skip-answered` uses your stored answers and only prompts for questions that are new to the template. Without it, copier re-asks every question.
+
+## Documentation
+
+The `docs/` folder holds template-provided reference material. It is gitignored, so a fresh `git clone` won't have it. Run `./scripts/restore-from-template.sh` to regenerate it (along with any other gitignored files the template ships).
+
+- `docs/SETUP.md`: one-time machine setup (install tools, authenticate to GCP, common errors).
+- `docs/RATIONALE.md`: what each tool and pattern is, and why it fits this project.
+- `docs/CONVENTIONS.md`: how to write code within those tools and patterns.
+- `docs/DEVELOPING.md`: daily tasks (running code, running tests, adding dependencies, debugging).
+
+`CLAUDE.md` at the repo root is checked in. It holds project-specific instructions for Claude Code sessions; edit it as the project evolves.

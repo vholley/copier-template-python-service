@@ -1,0 +1,122 @@
+# Makefile for {{ project_name }}
+#
+# Run `make help` for the command list.
+
+SHELL := /usr/bin/env bash
+.SHELLFLAGS := -euo pipefail -c
+.DEFAULT_GOAL := help
+
+UV         := uv
+PYTEST     := $(UV) run pytest
+RUFF       := $(UV) run ruff
+PYRIGHT    := $(UV) run pyright
+PRE_COMMIT := $(UV) run pre-commit
+
+{%- if use_gcp %}
+
+PROJECT_DEV  := {{ gcp_project_dev }}
+PROJECT_PROD := {{ gcp_project_prod }}
+REGION       := us-central1
+{%- endif %}
+
+.PHONY: help
+help:  ## Show this help
+	@awk 'BEGIN {FS = ":.*##"; printf "Targets:\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
+
+# ---------------------------------------------------------------------------
+# Setup
+# ---------------------------------------------------------------------------
+
+.PHONY: install
+install:  ## Install all dependencies via uv
+	$(UV) sync
+
+.PHONY: hooks
+hooks:  ## Install pre-commit hooks
+	$(PRE_COMMIT) install --install-hooks
+	$(PRE_COMMIT) install --hook-type commit-msg
+
+# ---------------------------------------------------------------------------
+# Code quality
+# ---------------------------------------------------------------------------
+
+.PHONY: lint
+lint:  ## Run ruff check
+	$(RUFF) check .
+
+.PHONY: typecheck
+typecheck:  ## Run pyright in strict mode
+	$(PYRIGHT)
+
+.PHONY: fix
+fix:  ## Apply ruff autofixes and format
+	$(RUFF) check --fix .
+	$(RUFF) format .
+
+.PHONY: test
+test:  ## Run pytest with coverage
+	$(PYTEST) --cov --cov-report=term-missing
+
+.PHONY: format-check
+format-check:  ## Verify code is formatted (no changes applied)
+	$(RUFF) format --check .
+
+.PHONY: ci
+ci: lint format-check typecheck test  ## Run lint + format-check + typecheck + test (matches CI)
+
+# ---------------------------------------------------------------------------
+# App scaffolding
+# ---------------------------------------------------------------------------
+
+.PHONY: new-app
+new-app:  ## Scaffold a new app: make new-app NAME=<name>
+	@if [ -z "$(NAME)" ]; then echo "Usage: make new-app NAME=<name>"; exit 1; fi
+	@./scripts/new-app.sh "$(NAME)"
+	@$(UV) sync
+{%- if include_docker %}
+
+# ---------------------------------------------------------------------------
+# Container build
+# ---------------------------------------------------------------------------
+
+.PHONY: build
+build:  ## Build the Docker image for an app: make build NAME=<name>
+	@if [ -z "$(NAME)" ]; then echo "Usage: make build NAME=<name>"; exit 1; fi
+	docker build -t {{ project_name }}-$(NAME):local -f apps/$(NAME)/Dockerfile .
+{%- endif %}
+{%- if use_gcp %}
+
+# ---------------------------------------------------------------------------
+# Deployment (canonical path is CI; this is for local testing)
+# ---------------------------------------------------------------------------
+
+.PHONY: deploy
+deploy:  ## Deploy an app: make deploy NAME=<name> ENV=<dev|prod>
+	@if [ -z "$(NAME)" ] || [ -z "$(ENV)" ]; then echo "Usage: make deploy NAME=<name> ENV=<dev|prod>"; exit 1; fi
+	@./scripts/deploy.sh "$(NAME)" "$(ENV)"
+{%- endif %}
+{%- if include_terraform %}
+
+# ---------------------------------------------------------------------------
+# Terraform
+# ---------------------------------------------------------------------------
+
+.PHONY: tf-plan
+tf-plan:  ## Run terraform plan: make tf-plan ENV=<dev|prod>
+	@if [ -z "$(ENV)" ]; then echo "Usage: make tf-plan ENV=<dev|prod>"; exit 1; fi
+	cd infra/terraform/environments/$(ENV) && terraform init && terraform plan
+
+.PHONY: tf-apply
+tf-apply:  ## Run terraform apply: make tf-apply ENV=<dev|prod>
+	@if [ -z "$(ENV)" ]; then echo "Usage: make tf-apply ENV=<dev|prod>"; exit 1; fi
+	cd infra/terraform/environments/$(ENV) && terraform init && terraform apply
+{%- endif %}
+
+# ---------------------------------------------------------------------------
+# Cleanup
+# ---------------------------------------------------------------------------
+
+.PHONY: clean
+clean:  ## Remove caches and build artifacts
+	rm -rf .pytest_cache .ruff_cache .coverage htmlcov
+	find . -type d -name __pycache__ -exec rm -rf {} +

@@ -1,0 +1,53 @@
+"""Application configuration.
+
+`BaseAppSettings` reads from environment variables and `.env` files via
+pydantic-settings.{% if use_gcp %} For secrets stored in GCP Secret Manager,
+use `get_secret()` from `shared.gcp`.{% endif %}
+
+Example:
+{% if use_gcp -%}
+    from shared.config import BaseAppSettings
+    from shared.gcp import get_secret
+
+
+    class Settings(BaseAppSettings):
+        portal_url: str
+        max_retries: int = 3
+
+
+    settings = Settings()
+    api_key = get_secret("PORTAL_API_KEY")
+{%- else -%}
+    from shared.config import BaseAppSettings
+
+
+    class Settings(BaseAppSettings):
+        portal_url: str
+        max_retries: int = 3
+
+
+    settings = Settings()
+{%- endif %}
+"""
+
+from __future__ import annotations
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class BaseAppSettings(BaseSettings):
+    """Base settings class for all apps.
+
+    Subclass to define fields. Values come from (in order of precedence):
+    explicit init args, environment variables, `.env` file.
+
+    Use uppercase env vars matching the field name. A field `portal_url`
+    reads from `PORTAL_URL`.
+    """
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )

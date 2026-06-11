@@ -1,0 +1,94 @@
+_min_copier_version: "9.0"
+_subdirectory: template
+_answers_file: .copier-answers.yml
+
+project_name:
+  type: str
+  help: Project name (kebab-case, e.g. my-python-service)
+  default: "{{ _copier_conf.dst_path.name }}"
+  validator: >-
+    {% if not (project_name | regex_search('^[a-z][a-z0-9-]+[a-z0-9]$')) %}
+    project_name must be lowercase kebab-case (letters, digits, hyphens; starts with a letter, ends with a letter or digit)
+    {% endif %}
+
+python_version:
+  type: str
+  help: Python version
+  default: "3.14"
+  choices:
+    - "3.13"
+    - "3.14"
+
+use_gcp:
+  type: bool
+  help: Include GCP deployment scaffolding (Cloud Run, Secret Manager, Cloud Logging)?
+  default: true
+
+gcp_project_dev:
+  type: str
+  help: GCP dev project ID (e.g. my-project-dev)
+  when: "{{ use_gcp }}"
+
+gcp_project_prod:
+  type: str
+  help: GCP prod project ID (e.g. my-project-prod)
+  when: "{{ use_gcp }}"
+
+include_docker:
+  type: bool
+  help: Include Dockerfile and container build scaffolding?
+  default: true
+
+include_terraform:
+  type: bool
+  help: Include Terraform skeleton for GCP infrastructure?
+  default: true
+  when: "{{ use_gcp }}"
+
+app_framework:
+  type: str
+  help: Web framework for generated apps
+  choices:
+    - fastapi
+    - minimal
+  default: fastapi
+
+# File exclusion rules driven by answers
+_exclude:
+  - "*.pyc"
+  - "__pycache__"
+  - ".git"
+  - "{% if not include_docker %}**/Dockerfile.jinja{% endif %}"
+  - "{% if not use_gcp %}infra{% endif %}"
+  - "{% if not use_gcp %}libs/shared/src/shared/gcp.py.jinja{% endif %}"
+  - "{% if not use_gcp %}.github/workflows/deploy.yml{% endif %}"
+  - "{% if not use_gcp %}scripts/deploy.sh.jinja{% endif %}"
+  - "{% if not include_terraform %}infra/terraform{% endif %}"
+  - "{% if not include_terraform %}scripts/tf-bootstrap.sh.jinja{% endif %}"
+  - "{% if not include_terraform %}.github/workflows/terraform-plan.yml{% endif %}"
+  - "{% if not include_terraform %}.github/workflows/terraform-apply.yml{% endif %}"
+
+# Post-generation tasks
+# git rev-list -1 HEAD succeeds only when commits exist (i.e. an existing project
+# being updated). On first copy there are no commits yet, so the condition fails
+# and we show the next-steps instructions. Temp dirs used internally by copier
+# during update also have no commits, so they see the echo — harmless since
+# those directories are deleted immediately after.
+_tasks:
+  - "[ -d .git ] || git init -b develop"
+  - >-
+    case "$(basename "$PWD")" in copier._main.*) ;; *)
+    git rev-list -1 HEAD >/dev/null 2>&1 || echo '
+    Generation complete. Next steps:
+      1. cd {{ _copier_conf.dst_path.name }}
+      2. ./scripts/bootstrap.sh
+      3. git add . && git commit -m "chore: initial commit"
+      4. git checkout -b main && git checkout develop
+      5. git remote add origin <your-github-repo-url>
+      6. git push -u origin develop main
+
+      Then configure branch protection and GitHub Environments — see README.md.
+
+      To pull future template updates:
+      copier update --trust --skip-answered
+    '; esac

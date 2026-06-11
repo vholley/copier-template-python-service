@@ -1,0 +1,37 @@
+# syntax=docker/dockerfile:1.7
+FROM python:{{ python_version }}-slim AS builder
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+WORKDIR /build
+
+# Copy workspace metadata and source
+COPY pyproject.toml uv.lock ./
+COPY libs/ libs/
+COPY apps/__APP_NAME__/ apps/__APP_NAME__/
+
+# Install only this app and its runtime dependencies
+ENV UV_LINK_MODE=copy
+RUN uv sync --frozen --no-dev --package __APP_NAME__
+
+# ---------------------------------------------------------------------------
+
+FROM python:{{ python_version }}-slim AS runtime
+
+RUN useradd -r -u 1001 app
+WORKDIR /app
+
+COPY --from=builder --chown=app:app /build /app
+
+ENV PATH="/app/.venv/bin:$PATH"
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+
+USER app
+
+{% if app_framework == "fastapi" -%}
+ENV PORT=8080
+CMD exec uvicorn __APP_NAME__.main:app --host 0.0.0.0 --port "${PORT}"
+{%- else -%}
+CMD ["python", "-m", "__APP_NAME__.main"]
+{%- endif %}

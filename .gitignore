@@ -1,0 +1,21 @@
+# Local copier test outputs
+/tmp/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+*.swp
+*.swo
+
+# Zip archives
+*.zip
+
+# Force-include template files that may be excluded by global gitignore
+!template/.vscode/
+!template/.vscode/**

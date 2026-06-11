@@ -1,0 +1,824 @@
+# Conventions
+
+This document captures the coding conventions for `{{ project_name }}`. Many are enforced by `ruff` and `pyright` and listed here for explicitness. Some require review-time judgment.
+
+The doc is normative. Deviations need a comment explaining why, or a PR updating this doc.
+
+## Type hints
+
+Use modern syntax: `X | None` over `Optional[X]`, `list[int]` over `List[int]`, `dict[str, int]` over `Dict[str, int]`.
+
+```python
+# Not preferred
+from typing import Optional, List, Dict
+
+def fetch_invoices(portal: Optional[str]) -> List[Dict[str, str]]:
+    ...
+
+# Preferred
+def fetch_invoices(portal: str | None) -> list[dict[str, str]]:
+    ...
+```
+
+Put `from __future__ import annotations` at the top of every module. All annotations become lazy strings, so importing types only for annotations doesn't add runtime cost.
+
+Type all public function signatures, including return types. Private helpers can rely on inference for obvious cases.
+
+Never use bare `Any`. Use `object` for "literally anything"; use concrete types, generics, or `TypeVar` elsewhere. The point of strict type checking is lost when `Any` shows up.
+
+```python
+# Not preferred — Any disables type checking for this function
+from typing import Any
+
+def process(data: dict[str, Any]) -> Any:
+    ...
+
+# Preferred — concrete types; TypedDict for fixed-shape dicts
+from typing import TypedDict
+
+class InvoiceFields(TypedDict):
+    id: str
+    amount: float
+
+def process(data: InvoiceFields) -> str:
+    ...
+```
+
+For dict shapes that have a fixed set of keys, use `TypedDict` rather than `dict[str, Any]`. For data crossing module boundaries, define a Pydantic model.
+
+```python
+from __future__ import annotations
+
+from typing import TypedDict
+
+
+class PortalCredentials(TypedDict):
+    username: str
+    password: str
+
+
+def fetch_invoice(portal: str, invoice_id: str) -> dict[str, str] | None:
+    """Fetch an invoice from a portal. Returns None if not found."""
+    ...
+```
+
+Use `cast()` sparingly, with a comment explaining why the cast is safe.
+
+## Docstrings
+
+Google style. Enforced by `ruff` via the `D` rule with `pydocstyle.convention = "google"`.
+
+Required for: public modules, public classes, public functions and methods.
+
+Not required for: trivial getters and setters, dunder methods (except `__init__` when non-obvious), private helpers, test functions (exempted via `per-file-ignores`).
+
+Sections (`Args`, `Returns`, `Raises`, `Yields`, `Example`) are used when relevant and skipped when trivial.
+
+```python
+# Not preferred — inline comment, wrong style, missing sections
+def fetch_invoice(portal, invoice_id):
+    # gets invoice from the portal
+    ...
+
+# Preferred — Google style with all relevant sections
+def fetch_invoice(portal: str, invoice_id: str) -> dict[str, str]:
+    """Fetch an invoice from a portal.
+
+    Args:
+        portal: Portal identifier (e.g. "portal_a").
+        invoice_id: Invoice ID as it appears in the portal.
+
+    Returns:
+        Invoice fields keyed by field name.
+
+    Raises:
+        PortalError: Portal returned an error or unexpected response.
+        TimeoutError: Portal didn't respond within the configured timeout.
+    """
+    ...
+```
+
+## Async
+
+Reach for `async` when the work is I/O-bound: HTTP, database, file I/O, message queues, anything that would otherwise block waiting on the network or disk.
+
+Don't use `async` for CPU-bound work (use threads or processes), or for code that's already on a sync call path with no I/O parallelism to gain.
+
+Don't mix sync and async in the same call path. Calling `asyncio.run()` from inside an async function is a bug. Use `asyncio.to_thread()` to run a blocking function from an async context.
+
+```python
+# Not preferred — asyncio.run() inside an async function raises RuntimeError
+async def process() -> None:
+    result = asyncio.run(blocking_io())  # RuntimeError: event loop already running
+
+# Not preferred — blocking call stalls the entire event loop
+async def process() -> None:
+    data = requests.get("https://api.example.com/data")  # blocks all coroutines
+
+# Preferred — delegate blocking work to a thread
+async def process() -> None:
+    data = await asyncio.to_thread(blocking_io)
+```
+
+For parallelism, use `asyncio.gather` rather than awaiting in a loop:
+
+```python
+# Sequential
+results = []
+for invoice in invoices:
+    results.append(await fetch_invoice(invoice))
+
+# Parallel
+results = await asyncio.gather(*[fetch_invoice(i) for i in invoices])
+```
+
+For timeouts, use `asyncio.wait_for`:
+
+```python
+result = await asyncio.wait_for(fetch_invoice(invoice_id), timeout=30.0)
+```
+
+For all-or-nothing semantics across a group of tasks, use `asyncio.TaskGroup` (Python 3.11+). Cancellation propagates to siblings on the first failure.
+
+## Naming
+
+- `snake_case` for functions, variables, modules, and packages
+- `PascalCase` for classes (Pydantic models, TypedDicts, Enums)
+- `SCREAMING_SNAKE_CASE` for module-level constants
+- Single leading underscore for module-private names (`_helper_function`)
+- Double leading underscore is reserved for name-mangling on class attributes; rarely needed
+
+Prefer descriptive names: `user_email` over `e`, `invoice_count` over `n`. Three-character variables outside of loop counters and lambdas signal that a longer name would help.
+
+```python
+# Not preferred — terse names, camelCase, unclear intent
+def getInvData(pId: str, inv: str) -> dict:
+    n = 0
+    flg = True
+    ...
+
+# Preferred — descriptive, snake_case throughout
+def fetch_invoice(portal_id: str, invoice_id: str) -> dict[str, str]:
+    retry_count = 0
+    is_authenticated = True
+    ...
+```
+
+For booleans and predicates, use a question form: `is_valid`, `has_expired`, `can_retry`. For factories, use `create_X` or `make_X`.
+
+```python
+# Not preferred — boolean names read as nouns or verbs
+valid = check_invoice(invoice)
+expired = token.expiry < now
+retry = attempts < max_attempts
+
+# Preferred — boolean names read as yes/no questions
+is_valid = validate_invoice(invoice)
+has_expired = token.expiry < now
+can_retry = attempts < max_attempts
+```
+
+**App file names are fixed, not invented.** Consistent naming means engineers and tooling know where to look in any app without reading the directory.
+
+Always present:
+
+| File | Purpose |
+|---|---|
+| `main.py` | App entrypoint, routes, and handlers |
+| `settings.py` | `Settings(BaseAppSettings)` — app configuration |
+
+Add these when the app needs them — always use these names:
+
+| File | Purpose |
+|---|---|
+| `models.py` | Pydantic models shared within the app |
+| `exceptions.py` | App-level exception hierarchy |
+
+Do not name the configuration file `config.py`, `app_settings.py`, or anything else.
+
+**Exception names follow `<Domain>Error` / `<Domain><Condition>Error`.**
+
+```python
+# Base exception for the domain — name it after the domain, not "Base"
+class PortalError(Exception):
+    """All portal-related failures."""
+
+# Specific conditions as subclasses — domain prefix, descriptive condition
+class PortalAuthenticationError(PortalError):
+    """Login credentials were rejected."""
+
+class PortalInvoiceNotFoundError(PortalError):
+    """Invoice does not exist on the portal."""
+```
+
+Route handlers catch the domain base (`PortalError`), not specific subclasses — keeping routes decoupled from the implementation hierarchy.
+
+**Pydantic model names are suffixed by their role.**
+
+| Role | Suffix | Example |
+|---|---|---|
+| FastAPI request body | `Request` | `VerifyInvoiceRequest` |
+| FastAPI response body | `Response` | `VerifyInvoiceResponse` |
+| External API payload (upstream system's schema) | `Payload` | `TokenPayload` |
+| Internal domain entity | plain noun | `Invoice`, `Portal` |
+
+Never return an internal domain model from a route. Define an explicit `Response` model — internal refactors cannot accidentally break the API contract.
+
+**Logging event names are `snake_case` string literals.** Not f-strings, not natural language, not camelCase:
+
+```python
+# Not preferred — formatted string, not queryable by exact match
+log.info(f"Invoice {invoice_id} processed successfully")
+
+# Not preferred — camelCase event name
+log.info("InvoiceProcessed", invoice_id=invoice_id)
+
+# Preferred — snake_case literal; all context goes in fields
+log.info("invoice_processed", invoice_id=invoice_id)
+```
+
+Use `<noun>_<past_tense_verb>` for state changes (`invoice_processed`, `token_refreshed`) and `<noun>_<condition>` for failures (`auth_failed`, `portal_unreachable`).
+
+## Error handling
+
+Catch specific exceptions, not bare `Exception`:
+
+```python
+# Preferred
+try:
+    response = await client.get(url)
+except httpx.RequestError as exc:
+    log.error("portal_request_failed", url=url, exc_info=exc)
+    raise PortalError("Portal request failed") from exc
+
+# Not preferred
+try:
+    response = await client.get(url)
+except Exception:
+    log.error("something went wrong")
+```
+
+Always use `raise ... from err` when re-raising. Readers see both the cause and the wrapper.
+
+```python
+# Not preferred — original traceback is lost
+except httpx.RequestError:
+    raise PortalError("Request failed")
+
+# Preferred — original cause is chained and visible in the traceback
+except httpx.RequestError as exc:
+    raise PortalError("Request failed") from exc
+```
+
+Define custom exception types for domain errors. A flat hierarchy with a base class per domain works well:
+
+```python
+class PortalError(Exception):
+    """Base exception for portal-related failures."""
+
+
+class PortalAuthenticationError(PortalError):
+    """Portal authentication failed."""
+
+
+class PortalInvoiceNotFoundError(PortalError):
+    """Invoice does not exist on the portal."""
+```
+
+Log at the site that has context, usually the catch site that knows what was being attempted. Don't double-log: if the catcher logs, the inner code should just raise.
+
+```python
+# Not preferred — exception logged at both sites
+async def fetch(invoice_id: str) -> dict:
+    try:
+        ...
+    except httpx.RequestError as exc:
+        log.error("fetch_failed", exc_info=exc)       # logged here
+        raise PortalError("Fetch failed") from exc
+
+async def process(invoice_id: str) -> dict:
+    try:
+        return await fetch(invoice_id)
+    except PortalError as exc:
+        log.error("process_failed", exc_info=exc)     # and logged again here
+        raise
+
+# Preferred — log once, at the site with the most context
+async def fetch(invoice_id: str) -> dict:
+    try:
+        ...
+    except httpx.RequestError as exc:
+        raise PortalError("Fetch failed") from exc    # just raise, no log
+
+async def process(invoice_id: str) -> dict:
+    try:
+        return await fetch(invoice_id)
+    except PortalError as exc:
+        log.error("process_failed", exc_info=exc)     # logged once here
+        raise
+```
+
+For transient failures, use `tenacity` with bounded attempts and exponential backoff:
+
+```python
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
+
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+    retry=retry_if_exception_type(httpx.RequestError),
+)
+async def fetch_from_portal(url: str) -> str:
+    ...
+```
+
+Retry only transient errors (network, 5xx). Never retry on 4xx (client error); that's a bug, not a transient failure.
+
+## Logging
+
+Use `structlog` configured via `shared.logging_setup`. Call `configure_logging()` once at app startup; use `structlog.get_logger()` everywhere else.
+
+```python
+# Not preferred — print statements, no structure, not queryable in Cloud Logging
+def process_invoice(invoice_id: str) -> None:
+    print(f"Processing invoice {invoice_id}")
+    ...
+    print("Done")
+
+# Preferred — structured log events with context fields
+log = structlog.get_logger()
+
+def process_invoice(invoice_id: str) -> None:
+    log.info("invoice_processing_started", invoice_id=invoice_id)
+    ...
+    log.info("invoice_processed", invoice_id=invoice_id)
+```
+
+```python
+import structlog
+from structlog.contextvars import bind_contextvars
+
+log = structlog.get_logger()
+
+
+async def process_invoice(invoice_id: str, portal: str) -> None:
+    bind_contextvars(invoice_id=invoice_id, portal=portal)
+    log.info("invoice_processing_started")
+    try:
+        result = await fetch_invoice(invoice_id, portal)
+        log.info("invoice_processed", field_count=len(result))
+    except PortalError as exc:
+        log.error("invoice_processing_failed", exc_info=exc)
+        raise
+```
+
+`bind_contextvars` attaches fields to every subsequent log line in the current async context. The fields flow through nested function calls automatically.
+
+Standard fields to include when relevant: `invoice_id`, `portal`, `request_id`, `trace_id`, `user_id`. Bind once per logical operation rather than passing them as kwargs on every call.
+
+```python
+# Not preferred — repeating context fields on every log call
+async def process(invoice_id: str, portal: str) -> None:
+    log.info("started", invoice_id=invoice_id, portal=portal)
+    result = await fetch(invoice_id, portal)
+    log.info("complete", invoice_id=invoice_id, portal=portal, field_count=len(result))
+
+# Preferred — bind once, fields propagate automatically to every log line
+async def process(invoice_id: str, portal: str) -> None:
+    bind_contextvars(invoice_id=invoice_id, portal=portal)
+    log.info("started")
+    result = await fetch(invoice_id, portal)
+    log.info("complete", field_count=len(result))
+```
+
+Level guidelines:
+
+- `DEBUG`: noisy detail useful when debugging; usually off in production
+- `INFO`: state changes worth recording (started, finished, decided, retried)
+- `WARNING`: unexpected but recoverable (retry succeeded, fell back to a default)
+- `ERROR`: actionable failures requiring investigation
+- `CRITICAL`: the application cannot continue
+
+Don't log:
+
+- Credentials, API keys, or secret values (including in URL parameters and headers)
+- Personally identifiable information without a clear retention reason
+- Request or response bodies that may contain the above
+- The same exception twice (use `exc_info=exc` once at the error site)
+
+{% if use_gcp -%}
+In Cloud Run, `structlog` emits JSON to stdout. The `severity` field replaces `level`, and `logging.googleapis.com/trace` is populated when `trace_id` is in the context.
+{%- endif %}
+
+## Configuration
+
+Application config comes from `BaseAppSettings` in `shared.config`:
+
+```python
+from shared.config import BaseAppSettings
+
+
+class Settings(BaseAppSettings):
+    portal_url: str
+    max_retries: int = 3
+    request_timeout_seconds: float = 30.0
+
+
+settings = Settings()
+```
+
+Values come from environment variables (uppercase: `PORTAL_URL`, `MAX_RETRIES`) and `.env` files for local development. Type coercion is automatic.
+
+{% if use_gcp -%}
+Secrets come from Secret Manager via `get_secret()`:
+
+```python
+from shared.gcp import get_secret
+
+api_key = get_secret("PORTAL_API_KEY")
+```
+
+The separation between config and secrets is intentional: config values appear in logs and dashboards; secret values do not.
+{%- endif %}
+
+No hardcoded values in source. If a value might differ between environments or might need to change without a code deploy, it lives in config.
+
+```python
+# Not preferred — reading os.environ directly, hardcoded fallback, hardcoded URL
+import os
+
+timeout = int(os.environ.get("REQUEST_TIMEOUT", "30"))
+api_url = "https://portal.example.com/api"  # breaks silently in other environments
+
+# Preferred — typed config with defaults via BaseAppSettings
+from shared.config import BaseAppSettings
+
+class Settings(BaseAppSettings):
+    api_url: str                        # required — must be set per environment
+    request_timeout_seconds: float = 30.0
+
+settings = Settings()
+```
+
+## App structure
+
+Every app in `apps/` follows this layout. Predictable structure means any engineer can navigate any app without relearning it.
+
+**Required files in every app:**
+
+```
+apps/<name>/
+├── src/<name>/
+│   ├── __init__.py
+│   ├── main.py          # App entrypoint, routes, and handlers
+│   └── settings.py      # Settings(BaseAppSettings) — always this name
+└── tests/
+    ├── conftest.py
+    └── test_main.py
+```
+
+Add these when the app needs them — always use these names:
+
+```
+src/<name>/
+├── models.py        # Pydantic models shared within the app
+└── exceptions.py    # App-level exception hierarchy
+```
+
+**Settings file is always `settings.py`. The class is always `Settings`.**
+
+```python
+# settings.py — the file name and class name are not negotiable
+from shared.config import BaseAppSettings
+
+
+class Settings(BaseAppSettings):
+    portal_url: str
+    max_retries: int = 3
+
+
+settings = Settings()  # module-level singleton
+```
+
+**Additional modules follow descriptive names.** When an app needs more than the base files, name new modules after what they do:
+
+| Module | Purpose |
+|---|---|
+| `client.py` | HTTP client for a single external service |
+| `processor.py` | Core business logic or data transformation |
+| `router.py` | FastAPI router when routes outgrow `main.py` |
+| `dependencies.py` | FastAPI `Depends()` callables |
+| `middleware.py` | FastAPI or Starlette middleware |
+
+`utils.py`, `helpers.py`, and `misc.py` are not allowed. If code has no clear home, that is a signal to find the right abstraction — not to create a catch-all module.
+
+**Flat by default, subdirectories for cohesive units.** Keep the app flat for general-purpose modules. Create a subdirectory when its contents represent a distinct, independently-scoped unit — a single external integration, a named domain boundary, or a component that warrants its own namespace. The file count is irrelevant; a subdirectory with a single `handler.py` is correct when the boundary is meaningful. Never create subdirectories for generic groupings: no `utils/`, `helpers/`, or `common/`.
+
+**`__init__.py` stays empty.** No re-exports, no import side effects. Import from the module where a symbol is defined — explicit import paths make the codebase searchable and the dependency graph clear.
+
+**For apps integrating multiple external providers or portals, use this structure:**
+
+```
+portals/
+├── __init__.py
+├── base.py        # Protocol definition
+├── registry.py    # Explicit registry and lookup
+└── <name>/        # One subdirectory per portal
+    ├── __init__.py
+    ├── handler.py      # Main implementation
+    ├── models.py       # Portal-specific Pydantic models
+    └── exceptions.py   # Subclass the app-level base exception
+```
+
+Use `Protocol` for portal interfaces, not `ABC`.
+
+`Protocol` is structurally typed: a class satisfies the interface by having the right methods, without inheriting from anything. This keeps portal implementations decoupled from the base definition — the dependency flows one way.
+
+```python
+# portals/base.py — Protocol, not ABC
+from __future__ import annotations
+
+from typing import Protocol, runtime_checkable
+
+from .models import LoginResponse
+
+
+@runtime_checkable
+class PortalAuthenticator(Protocol):
+    """A portal this service can authenticate against."""
+
+    name: str
+
+    async def smoke(self) -> dict[str, str]:
+        """Confirm the portal is reachable."""
+        ...
+
+    def authenticate(self) -> LoginResponse:
+        """Log in and return the access token."""
+        ...
+```
+
+The registry uses an explicit dict — no auto-discovery, no import path scanning. Adding a portal requires a deliberate change to `registry.py`.
+
+```python
+# portals/registry.py
+from __future__ import annotations
+
+from .base import PortalAuthenticator
+from .exceptions import UnknownPortalError
+from .tql.handler import TQLHandler
+
+_PORTALS: dict[str, PortalAuthenticator] = {
+    "tql": TQLHandler(),
+}
+
+
+def get_portal(name: str) -> PortalAuthenticator:
+    """Look up a portal by name. Raises UnknownPortalError if not registered."""
+    try:
+        return _PORTALS[name.lower()]
+    except KeyError as exc:
+        raise UnknownPortalError(name) from exc
+```
+
+## Shared library
+
+`libs/shared/` is the one shared library in this workspace. All apps import from it as `from shared.<module> import ...`.
+
+**The boundary rule.** `libs/shared/` is for infrastructure and cross-cutting concerns — code that any service might need regardless of what it does. The existing modules define the pattern:
+
+| Module | What it provides |
+|---|---|
+| `config.py` | `BaseAppSettings` — base class for all app settings |
+| `logging_setup.py` | `configure_logging()` — call once at startup |
+{% if use_gcp -%}
+| `gcp.py` | `get_secret(name)` — Secret Manager access |
+{% endif -%}
+
+What belongs in `shared`: config base classes, logging setup, GCP clients, retry utilities, shared HTTP middleware.
+
+What does not belong in `shared`: domain models, business logic, app-specific exceptions, or anything that would need to import from an app.
+
+**The dependency flows one way.** `libs/shared/` may import from third-party packages and the standard library. It cannot import from any app in `apps/`. An import from `shared` into an app is always correct; the reverse is never correct.
+
+**When two apps share domain logic**, that is a signal the service boundary is wrong, or that a new library should be extracted under `libs/`. Do not solve shared domain logic by adding it to `shared`.
+
+**Changes to `libs/shared/` affect every service.** A bug introduced here breaks every app in the workspace. Changes to `shared` require the full workspace test suite (`make test`) to pass. Target 90%+ test coverage on `shared` modules — higher than the 80% baseline for app code.
+
+## Testing
+
+Tests live alongside their app:
+
+```
+apps/scraper/
+├── src/scraper/
+└── tests/
+    ├── test_main.py
+    └── test_portals.py
+```
+
+One test file per source module. Test function names start with `test_` and describe the case:
+
+```python
+def test_fetch_invoice_returns_payload_on_success() -> None: ...
+def test_fetch_invoice_raises_on_auth_failure() -> None: ...
+```
+
+Fixtures for shared setup:
+
+```python
+import pytest
+
+
+@pytest.fixture
+def mock_portal_response() -> dict[str, str]:
+    return {"invoice_id": "INV-001", "amount": "100.00"}
+```
+
+Mock external services. Never hit real GCP, real portals, or real HTTP from tests. Use `unittest.mock` or `pytest-mock`:
+
+```python
+from unittest.mock import AsyncMock, patch
+
+
+@patch("scraper.portals.httpx.AsyncClient", new_callable=AsyncMock)
+async def test_fetch_invoice(mock_client) -> None:
+    mock_client.return_value.get.return_value.json.return_value = {"id": "INV-001"}
+    ...
+```
+
+Mock at the external boundary, not inside the implementation. Patching private methods couples tests to internals that can change without breaking behaviour.
+
+```python
+# Not preferred — patching an internal method; survives refactors that break real behaviour
+@patch("scraper.processor.InvoiceProcessor._parse_raw")
+def test_process(mock_parse: MagicMock) -> None:
+    mock_parse.return_value = {"id": "INV-001"}
+    result = processor.process("INV-001")
+    assert result["id"] == "INV-001"
+
+# Preferred — inject the HTTP client, mock at the network boundary
+async def test_process(mocker: MockerFixture) -> None:
+    mock_client = mocker.AsyncMock(spec=httpx.AsyncClient)
+    mock_client.get.return_value.json.return_value = {"id": "INV-001"}
+    result = await process_invoice("INV-001", client=mock_client)
+    assert result["id"] == "INV-001"
+```
+
+Each test must own its data. Mutable module-level test data leaks between tests and causes order-dependent failures.
+
+```python
+# Not preferred — mutable shared state; tests affect each other
+INVOICE: dict[str, Any] = {"id": "INV-001", "items": []}
+
+def test_add_item() -> None:
+    INVOICE["items"].append("widget")     # mutates shared dict
+    assert len(INVOICE["items"]) == 1
+
+def test_no_items() -> None:
+    assert INVOICE["items"] == []         # fails if test_add_item ran first
+
+# Preferred — each test gets a fresh copy via a fixture
+@pytest.fixture
+def invoice() -> dict[str, Any]:
+    return {"id": "INV-001", "items": []}
+
+def test_add_item(invoice: dict[str, Any]) -> None:
+    invoice["items"].append("widget")
+    assert len(invoice["items"]) == 1
+
+def test_no_items(invoice: dict[str, Any]) -> None:
+    assert invoice["items"] == []
+```
+
+For async tests, use `pytest-asyncio`. Set `asyncio_mode = "auto"` in `pyproject.toml` so async test functions don't need an explicit marker.
+
+Coverage target: roughly 80% on new code. Higher for `libs/shared/` because bugs there affect every app. Run `make test` locally; CI runs the same command.
+
+## Imports
+
+Ruff (`I` rule) handles ordering. The standard order is:
+
+1. `__future__` import
+2. Standard library
+3. Third-party packages
+4. First-party packages (`shared`, the app's own modules)
+
+Groups separated by a blank line. Within a group, alphabetical.
+
+```python
+from __future__ import annotations
+
+import logging
+from typing import TYPE_CHECKING
+
+import httpx
+import structlog
+
+from shared.config import BaseAppSettings
+{% if use_gcp -%}
+from shared.gcp import get_secret
+{%- endif %}
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+```
+
+Don't import inside functions except to break circular imports (sparingly) or inside `if TYPE_CHECKING:` for type-only imports that would create runtime cycles.
+
+`from __future__ import annotations` at the top of every module makes annotations lazy strings. This means types imported only for annotations don't need to be imported at runtime; put them inside `if TYPE_CHECKING:` to avoid the runtime cost.
+
+## Common patterns
+
+**Data at module boundaries.** External data (API responses, Pub/Sub message payloads, config files) goes through Pydantic models. Internal helpers can use regular dataclasses, TypedDicts, or plain dicts as appropriate.
+
+**HTTP calls.** Use `httpx`, not `requests`. httpx supports both sync and async with the same API. Set explicit timeouts on every call; never make an unbounded HTTP request. Use a shared `AsyncClient` with connection pooling for high-volume scenarios.
+
+```python
+# Not preferred — unbounded request, new connection per call, requests library
+import requests
+
+def fetch_invoice(invoice_id: str) -> dict:
+    return requests.get(f"{BASE_URL}/invoices/{invoice_id}").json()
+
+# Preferred — explicit timeout, shared pooled client, httpx
+async def fetch_invoice(invoice_id: str, client: httpx.AsyncClient) -> dict:
+    response = await client.get(f"/invoices/{invoice_id}", timeout=30.0)
+    response.raise_for_status()
+    return response.json()
+```
+
+**Retries.** Use `tenacity` decorators with bounded attempts and exponential backoff. Retry only transient errors.
+
+**JSON parsing.** Validate via Pydantic, not `json.loads` plus manual checks. Pydantic gives typed access and clear error messages.
+
+```python
+# Not preferred — manual validation, untyped access, silent failures
+def parse_invoice(raw: dict) -> dict:
+    if "id" not in raw or "amount" not in raw:
+        raise ValueError("missing fields")
+    return raw  # still untyped
+
+# Preferred — Pydantic validates structure, types, and gives clear error messages
+class InvoiceResponse(BaseModel):
+    id: str
+    amount: float
+    status: str
+
+def parse_invoice(raw: dict) -> InvoiceResponse:
+    return InvoiceResponse.model_validate(raw)
+```
+
+**Iteration.** Use generators (`yield`) for streaming over large data. Use `itertools` for combinatorial patterns. Prefer list comprehensions over `map` and `filter` for readability.
+
+**Dependency injection.** Pass dependencies (clients, settings, loggers) as function arguments or constructor arguments. Avoid module-level singletons that fetch their own dependencies; they make tests painful.
+
+```python
+# Not preferred — module-level client is hard to replace in tests
+_client = httpx.AsyncClient(base_url=settings.api_url)
+
+async def fetch_invoice(invoice_id: str) -> dict:
+    return (await _client.get(f"/invoices/{invoice_id}")).json()
+
+# Preferred — client injected; tests pass a mock, production passes a real client
+async def fetch_invoice(invoice_id: str, client: httpx.AsyncClient) -> dict:
+    return (await client.get(f"/invoices/{invoice_id}")).json()
+```
+
+## Git and PR conventions
+
+Conventional commits are enforced by the `conventional-pre-commit` hook on every commit:
+
+```
+<type>(<scope>): <subject>
+
+<body>
+
+<footer>
+```
+
+Types: `feat`, `fix`, `chore`, `docs`, `refactor`, `test`, `perf`, `ci`, `build`, `style`. Subject under 72 characters, imperative mood ("add", not "added").
+
+Branch names follow `<type>/<short-description>`. All branches — features, bug fixes, and hotfixes — follow this convention.
+
+```
+feat/add-portal-scraper
+fix/auth-token-expiry
+fix/critical-invoice-total-bug
+```
+
+**The commit type carries the Git Flow signal.** Branch names do not include a type prefix, so every commit's conventional commit type must reflect the branch's purpose: `feat:` for new behavior, `fix:` for bug fixes and hotfixes, `chore:`/`docs:`/`refactor:` for maintenance. A branch whose commits span multiple types should be split.
+
+PR title: the conventional commit subject. Squash-merge collapses the branch's commits into one with the PR title as the merge message.
+
+PR description: three sections.
+
+- **Why**: what problem this solves
+- **What changed**: substantive changes (skip mechanical fixes)
+- **How tested**: tests added, manual verification, edge cases considered
+
+Required before merge:
+
+- CI passes (lint, format-check, typecheck, test)
+- Self-review passes (no debug code, no unresolved TODOs, no unintentional changes)
+- New logic has corresponding tests

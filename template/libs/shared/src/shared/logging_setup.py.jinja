@@ -1,0 +1,94 @@
+"""Structured logging setup.
+
+In Cloud Run (detected via the K_SERVICE env var), logs emit as JSON
+to stdout with field names that Cloud Logging recognizes for structured
+ingestion (severity, trace correlation).
+
+Otherwise, logs emit as human-readable colored output to stderr.
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+import sys
+from typing import TYPE_CHECKING
+
+import structlog
+
+if TYPE_CHECKING:
+{% if use_gcp %}
+    from structlog.types import EventDict, Processor
+{% else %}
+    from structlog.types import Processor
+{% endif %}
+
+{% if use_gcp %}
+
+def _cloud_logging_severity(
+    _logger: object, _method_name: str, event_dict: EventDict
+) -> EventDict:
+    """Rename `level` to `severity` for Cloud Logging compatibility."""
+    if "level" in event_dict:
+        event_dict["severity"] = event_dict.pop("level").upper()
+    return event_dict
+
+
+def _add_trace_context(
+    _logger: object, _method_name: str, event_dict: EventDict
+) -> EventDict:
+    """Format trace context as Cloud Logging expects.
+
+    Apps that handle HTTP requests should put `trace_id` into the
+    structlog context before logging (e.g. in middleware). If present,
+    this processor formats it as the field Cloud Logging looks for.
+    """
+    trace_id = event_dict.pop("trace_id", None)
+    if trace_id:
+        project = os.environ.get("GCP_PROJECT")
+        if project:
+            event_dict["logging.googleapis.com/trace"] = (
+                f"projects/{project}/traces/{trace_id}"
+            )
+    return event_dict
+
+{% endif %}
+def configure_logging(*, level: str = "INFO") -> None:
+    """Configure structlog for the application.
+
+    Detects Cloud Run via the K_SERVICE env var. In Cloud Run, emits
+    JSON to stdout. Elsewhere, emits human-readable output to stderr.
+
+    Args:
+        level: Minimum log level (DEBUG, INFO, WARNING, ERROR, CRITICAL).
+    """
+    is_cloud_run = bool(os.environ.get("K_SERVICE"))
+
+    shared_processors: list[Processor] = [
+        structlog.contextvars.merge_contextvars,
+        structlog.processors.add_log_level,
+        structlog.processors.TimeStamper(fmt="iso", utc=True),
+        structlog.processors.StackInfoRenderer(),
+        structlog.processors.format_exc_info,
+    ]
+{% if use_gcp %}
+    if is_cloud_run:
+        shared_processors.extend([_add_trace_context, _cloud_logging_severity])
+{% endif %}
+    renderer: Processor
+    if is_cloud_run:
+        renderer = structlog.processors.JSONRenderer()
+    else:
+        renderer = structlog.dev.ConsoleRenderer(colors=True)
+
+    structlog.configure(
+        processors=[*shared_processors, renderer],
+        wrapper_class=structlog.make_filtering_bound_logger(
+            logging.getLevelNamesMapping()[level.upper()]
+        ),
+        context_class=dict,
+        logger_factory=structlog.PrintLoggerFactory(
+            file=sys.stdout if is_cloud_run else sys.stderr
+        ),
+        cache_logger_on_first_use=True,
+    )

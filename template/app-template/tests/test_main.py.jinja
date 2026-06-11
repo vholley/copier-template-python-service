@@ -1,0 +1,17 @@
+"""Tests for __APP_NAME__.main."""
+
+{% if app_framework == "fastapi" -%}
+from __APP_NAME__.main import healthz
+
+
+def test_healthz_returns_ok() -> None:
+    """healthz returns an ok status payload."""
+    assert healthz() == {"status": "ok"}
+{%- else -%}
+from __APP_NAME__.main import main
+
+
+def test_main_callable() -> None:
+    """main is callable without raising."""
+    main()
+{%- endif %}

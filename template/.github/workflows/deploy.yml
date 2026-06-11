@@ -1,0 +1,113 @@
+name: Deploy
+
+on:
+  push:
+    branches: [develop, main]
+    paths:
+      - 'apps/**'
+      - 'libs/**'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        type: choice
+        options: [dev, prod]
+      apps:
+        description: 'Specific apps (space-separated; empty = all)'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  REGION: us-central1
+  REPO: ${{ github.event.repository.name }}
+
+jobs:
+  list-apps:
+    name: list apps
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      apps: ${{ steps.list.outputs.apps }}
+      environment: ${{ steps.env.outputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: env
+        run: |
+          if [[ -n "${{ inputs.environment }}" ]]; then
+            echo "environment=${{ inputs.environment }}" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "environment=prod" >> $GITHUB_OUTPUT
+          else
+            echo "environment=dev" >> $GITHUB_OUTPUT
+          fi
+
+      - id: list
+        run: |
+          if [[ -n "${{ inputs.apps }}" ]]; then
+            apps=$(echo "${{ inputs.apps }}" | tr ' ' '\n' | jq -R . | jq -sc .)
+          else
+            apps=$(ls -d apps/*/ 2>/dev/null | sed 's|apps/||;s|/||' | jq -R . | jq -sc .)
+          fi
+          if [[ -z "$apps" || "$apps" == "null" ]]; then
+            apps="[]"
+          fi
+          echo "apps=$apps" >> $GITHUB_OUTPUT
+
+  deploy:
+    name: deploy ${{ matrix.app }} to ${{ needs.list-apps.outputs.environment }}
+    needs: list-apps
+    if: needs.list-apps.outputs.apps != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: ${{ needs.list-apps.outputs.environment }}
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJson(needs.list-apps.outputs.apps) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.DEPLOY_SERVICE_ACCOUNT }}
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker auth
+        run: gcloud auth configure-docker $REGION-docker.pkg.dev --quiet
+
+      - name: Build image
+        run: |
+          IMAGE="$REGION-docker.pkg.dev/${{ vars.GCP_PROJECT }}/$REPO/${{ matrix.app }}"
+          docker build \
+            -t "$IMAGE:${{ github.sha }}" \
+            -t "$IMAGE:latest" \
+            -f "apps/${{ matrix.app }}/Dockerfile" .
+
+      - name: Push image
+        run: |
+          IMAGE="$REGION-docker.pkg.dev/${{ vars.GCP_PROJECT }}/$REPO/${{ matrix.app }}"
+          docker push "$IMAGE:${{ github.sha }}"
+          docker push "$IMAGE:latest"
+
+      - name: Deploy to Cloud Run
+        run: |
+          IMAGE="$REGION-docker.pkg.dev/${{ vars.GCP_PROJECT }}/$REPO/${{ matrix.app }}:${{ github.sha }}"
+          gcloud run deploy "${{ matrix.app }}" \
+            --project="${{ vars.GCP_PROJECT }}" \
+            --region="$REGION" \
+            --image="$IMAGE" \
+            --platform=managed \
+            --no-allow-unauthenticated

@@ -1,0 +1,223 @@
+# Rationale
+
+This document explains what each tool and pattern in `{{ project_name }}` is, and why it fits the project. Read it once when joining the project; revisit when something feels arbitrary.
+
+## Tooling
+
+### Python {{ python_version }}
+
+Python {{ python_version }} is the most recent stable Python release supported by Google Cloud Run, Cloud Run Jobs, and Cloud Run functions. Google's official Python Buildpack uses uv as the default installer for Python 3.14+, so dependency resolution locally and in Google's build system produce the same result.
+
+{% if python_version == "3.14" -%}
+3.13 is the fallback if a dependency lags. Drop back by editing `.python-version` and `pyproject.toml`'s `requires-python`.
+{%- else -%}
+The template defaults to 3.14; this project is on 3.13 because of a dependency lag at generation time. Bump when the lag clears.
+{%- endif %}
+
+### uv
+
+uv is a Python package and project manager written in Rust. One binary does the work that several older tools used to split between them:
+
+- **Python version installation**: downloads and pins a specific Python version per project (replaces `pyenv`).
+- **Virtual environment creation**: creates the isolated Python environment that the project's dependencies live in (replaces `python -m venv`).
+- **Dependency resolution**: figures out which package versions satisfy every requirement (replaces parts of `pip`).
+- **Lockfile generation**: writes `uv.lock`, a file listing the exact versions installed. Two engineers running `uv sync` with the same lockfile get the same versions, even months apart.
+- **Workspace coordination**: lets multiple Python packages in this repo share one set of dependencies and one virtual environment.
+
+Installs and resolutions are an order of magnitude faster than the older pip/Poetry stack. The Google Python Buildpack uses uv natively for Python 3.14+, matching what runs locally.
+
+### Ruff
+
+Ruff is a Python linter and formatter written in Rust. A linter checks code style and common bug patterns; a formatter rewrites code to a consistent layout. Ruff implements the rules of older tools (black, isort, flake8, pycodestyle, pyflakes, most of pylint) plus a growing set of ruff-specific rules. Configuration lives in one section of `pyproject.toml`.
+
+One tool replaces the four-or-five-tool legacy stack. Runtime is an order of magnitude faster, configuration is centralized, and the rule selection is documented inline in `pyproject.toml`. Tests are exempted from docstring and annotation strictness via `per-file-ignores`, since test code prioritizes readability over interface contracts.
+
+### Pyright
+
+Pyright is Microsoft's static type checker for Python. "Static" means it checks types by reading the code, without running it. Python is dynamically-typed, but type annotations (e.g. `def add(a: int, b: int) -> int:`) let tools like Pyright catch type-related bugs before runtime.
+
+Strict mode requires annotations on every function signature, flags any value Pyright can't determine the type of (implicit `Any`), and rejects unsafe casts. It's the same type checker that VS Code's Pylance extension uses, so the diagnostics in your editor match what CI reports.
+
+Strict mode catches a class of bugs that lighter checking misses: forgotten None handling, wrong return types, mis-typed dict keys. The annotation cost is small for new code and pays off at every refactor.
+
+One override: `reportMissingTypeStubs` is downgraded from error to warning. Several `google-cloud-*` libraries ship incomplete stubs (the files that describe types for code Pyright can't read directly), and treating that as a CI-blocking error creates churn that isn't about code quality.
+
+### pytest
+
+pytest is the de facto standard Python test framework. Tests are plain Python functions whose names start with `test_`; pytest discovers and runs them. Fixtures (reusable setup) and parametrization (running one test with many inputs) come from decorators. `pytest-cov` reports test coverage during a test run.
+
+Coverage source is `["src"]`, which auto-discovers package code under any `src/` directory in the workspace. New apps and libraries are picked up without enumerating them individually.
+
+## Repo structure
+
+### Monorepo
+
+A monorepo is one git repository that holds multiple deployable units (apps) and shared libraries (libs), instead of giving each its own repo. uv's workspace feature makes this work cleanly: `apps/*` and `libs/*` are declared as workspace members in the root `pyproject.toml`, and they share one Python environment, one lockfile, and one dependency resolution.
+
+When an app needs code from `libs/shared`, the app's `pyproject.toml` declares the dependency and uv resolves it to the local workspace path. A change in `libs/shared` is immediately visible to every app that uses it; there is no publish-and-bump cycle.
+
+The workspace root has no `[project]` section, just `[tool.uv.workspace]` and `[dependency-groups]`. This is called a "virtual" workspace root: the directory coordinates members without being a Python package itself.
+
+### src/ layout
+
+The src layout puts package code under `<package>/src/<package_name>/` instead of `<package>/<package_name>/`. Tests live under `<package>/tests/`.
+
+Here is why this matters. When Python runs a script, it adds the script's directory to the import path. Without the src layout, running `pytest` from a package's root directory makes Python find the in-tree source code (`<package>/<package_name>/`) before checking the installed virtual environment. Tests can then pass even when a packaging bug (missing `__init__.py`, missing files in `package_data`, etc.) would make the installed package broken.
+
+With the src layout, the package source is under `src/`, which is not on the import path by default. Tests can only find the package through the installed virtual environment, the same way production code finds it. Packaging bugs surface immediately. This is the standard recommendation for any Python package today.
+
+### apps, libs, infra, scripts
+
+The repo is partitioned by what each directory holds:
+
+- `apps/`: deployable services and jobs. Each subdirectory is a separate Python package and becomes a Cloud Run service or job.
+- `libs/`: shared code, imported by apps. `libs/shared/` is the single shared library today; additional libraries can be extracted as patterns emerge.
+- `infra/`: Terraform configuration for cloud resources.
+- `scripts/`: operational shell scripts (`bootstrap.sh`, `new-app.sh`, `deploy.sh`, `tf-bootstrap.sh`, `restore-from-template.sh`).
+- `app-template/`: scaffold copied by `make new-app`. Not deployed.
+
+The split keeps Python application code separate from infrastructure code, deployment scripts, and the new-app scaffolding. Each has its own tooling lifecycle.
+
+### app-template
+
+`app-template/` is a directory tree containing the files a new app needs: a `pyproject.toml`, a `main.py`, a tests directory. The files contain `__APP_NAME__` placeholders where the app's name should go. `make new-app NAME=my-service` invokes `new-app.sh`, which copies the tree to `apps/my-service/` and replaces every `__APP_NAME__` with `my_service` (or whatever you named it) using `sed`.
+
+Templating happens in two phases. First, copier substitutes Jinja variables (`{{ python_version }}`, `{{ project_name }}`, conditional content) once, when the project is first generated from the template. Second, `new-app.sh` substitutes `__APP_NAME__` each time you create a new app later. The two phases exist because copier's variables are out of scope by the time `new-app.sh` runs.
+
+`app-template/` is excluded from ruff and pyright. The placeholder files there aren't valid Python until `new-app.sh` runs.
+
+### copier
+
+copier is a project templating tool. It generates new projects from a template by asking questions (Python version, framework, GCP or not, etc.) and rendering files based on the answers. The template repo for this project lives at the URL stored in `.copier-answers.yml`.
+
+Unlike a plain "use this template" button on GitHub, copier supports updates: `copier update --trust` re-fetches the latest template version, re-renders with the previously-given answers, and merges changes into the existing project. This is how template improvements (new tooling, security fixes, CI changes) reach existing projects without manual file-copying.
+
+Conditional content in the template lives in two forms: file-level exclusion via `_exclude` rules in `copier.yaml` (for whole files like Terraform when `include_terraform` is false), and inline Jinja conditionals within files (for things like the GCP-specific logging processors in `logging_setup.py`).
+
+## Code patterns
+
+### structlog
+
+structlog is a structured logging library for Python. The standard library's `logging` module produces lines of free-form text; structlog produces lines of structured data (key-value pairs), which makes logs much easier to query and aggregate in tools like Cloud Logging.
+
+A typical structlog call looks like `log.info("payment_processed", user_id=user.id, amount=amount, currency="USD")`. The output is a JSON object with those fields plus a timestamp and severity.
+
+Logs go to stdout as JSON when the app runs in Cloud Run (detected via the `K_SERVICE` env var) and as colored console output to stderr in development. Cloud Run auto-ingests anything on stdout into Cloud Logging, so application code needs no `CloudLoggingHandler` or GCP client in the logging path. Field names follow Cloud Logging conventions: `severity` (uppercase string) is renamed from structlog's `level`, and `logging.googleapis.com/trace` is populated when a trace ID is present in the structlog context (typically set by HTTP middleware on the inbound request).
+
+### Configuration and secrets
+
+`BaseAppSettings` (in `libs/shared`) is a pydantic-settings model. pydantic-settings reads configuration from environment variables and `.env` files when the model is instantiated, with type validation: declare `port: int = 8080` and you get an integer back, with an error if the env var can't be parsed.
+
+Secrets (database passwords, API keys, etc.) are read separately via `get_secret("SECRET_NAME")` from `shared.gcp`. This function looks up the named secret in Google Secret Manager and returns its value.
+
+Two reasons for the split. First, type-safe config loading and secret retrieval are different operations with different failure modes; mixing them makes both harder to reason about. Second, explicit `get_secret` calls keep the data flow visible in code: a reader can tell which values come from environment variables (config) and which from Secret Manager (secrets), and exactly what code reads each.
+
+{% if include_docker -%}
+### Multi-stage Dockerfile
+
+A Docker image holds everything needed to run an application: the Python interpreter, dependencies, application code, and system libraries. A multi-stage build splits the work into two stages so the final image is small and clean.
+
+The builder stage installs dependencies into a virtual environment via `uv sync --frozen --no-dev --package <app>`. It uses a heavier base image with build tools, since this stage is discarded. The runtime stage starts fresh from a slim base image, copies only the virtual environment from the builder, copies the app code, and runs as a non-root user. The final image contains only what's needed at runtime.
+
+The `--package <app>` flag is uv-specific. It installs only the named workspace member and its transitive dependencies; other workspace members are excluded. A 5-app workspace produces 5 small images, not 5 copies of a large one.
+
+{% endif -%}
+{% if use_gcp -%}
+## Cloud and deployment
+
+### Cloud Run
+
+Cloud Run is Google Cloud's managed container platform. You hand it a container image; it runs the image, scales it up when traffic arrives, and scales it down (often to zero) when traffic stops. You pay for the time containers are running.
+
+Cloud Run has three workload types, all running on the same underlying infrastructure:
+
+- **Services**: HTTP-triggered, can be long-running. Use for APIs and web apps.
+- **Jobs**: run-to-completion batch tasks. Use for scheduled work, migrations, one-off scripts.
+- **Functions**: event-triggered handlers, often shorter-lived. Use for Pub/Sub subscribers or other event handlers.
+
+One container build process and one deployment path work across all three. The choice between them is the trigger: HTTP request for services, batch command for jobs, CloudEvent for functions. The image, IAM permissions, networking, and CI/CD pattern are identical.
+
+### Workload Identity Federation
+
+Workload Identity Federation (WIF) is how GitHub Actions authenticates to Google Cloud without long-lived credentials. Some background first.
+
+A **GCP service account** is a non-human identity that can be granted permissions on GCP resources (deploy to Cloud Run, read from Secret Manager, etc.). Code running in GCP usually authenticates as a service account.
+
+The old way: create a service account, generate a JSON key file, store the key as a GitHub secret, and have CI use that key to authenticate. The problem is that the key is a long-lived credential. If it leaks (committed to git, pasted in chat, exposed in logs), anyone with it can impersonate the service account until the key is revoked.
+
+WIF replaces this with a token exchange. GitHub Actions natively emits OIDC tokens: short-lived, cryptographically signed claims about which workflow is running, in which repo, on which branch. WIF in GCP is configured to accept those tokens, verify they came from a specific GitHub repo, and exchange them for short-lived GCP credentials for a specific service account. No long-lived secrets are stored anywhere.
+
+The WIF setup has three parts:
+
+- An **identity pool**: a logical container for external identities.
+- An **identity provider**: configured to trust GitHub's OIDC issuer.
+- An **attribute condition**: restricts which OIDC tokens can be exchanged. Ours restricts to tokens from this specific GitHub repository, so a token from another repo cannot use our pool.
+
+At deploy time, GitHub Actions calls the `google-github-actions/auth` step. The step presents the OIDC token to GCP, GCP validates it, and the step gets back a short-lived access token for the deploy service account. Short-lived means the token expires within an hour; no one can leak a permanent credential because none exists.
+
+{% if include_terraform -%}
+### Terraform
+
+Terraform is an infrastructure-as-code tool. You write configuration files (`.tf`) declaring the cloud resources you want (a Cloud Run service, an IAM binding, a Secret Manager secret, etc.), and Terraform talks to the cloud provider's API to make reality match that configuration.
+
+Terraform keeps a **state file** that records what it created, what each resource's ID is, and what configuration was applied. When you run `terraform plan`, it diffs the state against your configuration and shows what will change. When you run `terraform apply`, it executes those changes. State lives in a backend; here, a GCS bucket per environment so that the state is shared across engineers and CI.
+
+Two GCP projects (dev and prod) exist from day one, resources need to be reproducible without tribal knowledge, and more than one engineer provisions infrastructure regularly. Terraform handles those concerns: every engineer sees the same resource definitions, every change is reviewed, and recreating an environment is a `terraform apply` away. The learning cost is concentrated upfront; the ongoing cost is small once the patterns are in place.
+
+### Per-environment state
+
+Each environment's Terraform state lives in its own GCS bucket, inside the matching GCP project: dev state in `{{ gcp_project_dev }}-tfstate`, prod state in `{{ gcp_project_prod }}-tfstate`. The `tf-bootstrap.sh` script creates these buckets the first time the project is set up.
+
+State corruption (a bad `terraform apply`, a partially-completed run, an accidentally-edited state file) affects only the environment whose bucket holds it. A mistake in dev cannot break prod. An alternative is to put all state in one ops project; per-environment isolation is simpler when there is no separate ops project.
+
+### Flat structure
+
+`environments/dev/main.tf` and `environments/prod/main.tf` are near-duplicates today. Each environment's full configuration is visible in one file: APIs to enable, service accounts to create, IAM roles to bind, the Artifact Registry repository, the Workload Identity Federation setup.
+
+A common refactoring at scale is to factor shared configuration into a `modules/environment/` Terraform module that both environments call. That is the right move once change patterns stabilize and duplication causes friction. Premature modularization adds indirection (module inputs, outputs, paths) without commensurate benefit while the surface area is small. The flat structure is faster to read and modify until then.
+
+{% endif -%}
+{% endif -%}
+## Process
+
+### Conventional commits
+
+Conventional commits is a specification for commit message format. Each commit message follows `<type>(<scope>): <subject>`, where `type` is one of a fixed set (`feat` for a new feature, `fix` for a bug fix, `chore` for routine maintenance, `docs` for documentation, `refactor` for non-functional changes, etc.) and `scope` optionally names the part of the code touched. Examples:
+
+- `feat(auth): add OAuth login support`
+- `fix(api): handle null user IDs in /users/{id}`
+- `chore: update dependencies`
+
+The `conventional-pre-commit` hook enforces this format on the commit message itself; commits that don't match are rejected locally before they reach the remote.
+
+Consistent commit message format makes git history scannable and downstream automation tractable. Changelog generation and semantic-versioning automation become available later if needed. The format is mechanical and the cost is one-line learning. Signed commits (GPG) add cryptographic provenance at the cost of onboarding friction (key generation, configuration). Not configured by this template.
+
+### Pre-commit
+
+pre-commit is a tool that runs checks ("hooks") against your staged files automatically, every time you run `git commit`. If any hook fails, the commit is rejected and you fix the issues. Hooks are configured in `.pre-commit-config.yaml`. To enable them on your machine, run `pre-commit install` once (bootstrap.sh does this); it adds a git hook script that runs pre-commit before each commit.
+
+The configured hooks are ruff (lint and format), pyright (type-check), and several file-hygiene checks (trailing whitespace, end-of-file newlines, YAML syntax). The principle: by the time code reaches review, no one should be commenting on formatting, import order, or unused imports. Reviewers focus on logic and design.
+
+### CI
+
+CI (continuous integration) runs in GitHub Actions: a set of workflows defined in `.github/workflows/` that GitHub runs on certain events. `ci.yml` runs lint, format-check, typecheck, and tests on every pull request and on pushes to `develop` and `main`. `deploy.yml` builds the container image, pushes it to Artifact Registry, and deploys to Cloud Run — to `dev` on push to `develop`, to `prod` on push to `main`.
+{% if include_terraform -%}
+Two Terraform workflows when applicable: `terraform-plan.yml` shows the planned infrastructure changes on PRs that touch `infra/`, and `terraform-apply.yml` applies changes — to `dev` on push to `develop`, to `prod` on push to `main`.
+{% endif %}
+CI invokes `make` targets rather than raw commands. Local `make ci` and CI run the same checks. Drift between them is hard to introduce.
+
+{% if use_gcp -%}
+### Deployment
+
+This project uses Git Flow. Two long-lived branches map directly to two environments:
+
+- `develop` is the integration branch. Feature branches merge here via PR. Pushing to `develop` automatically deploys to `dev`. New code reaches a real GCP environment within minutes, where it can be tested against real services without affecting customers.
+- `main` is the production branch. When `develop` is ready for a release, it is merged to `main` via PR. Pushing to `main` triggers a deployment to `prod`.
+
+Prod deploys are gated. The `prod` GitHub environment has a required-reviewers protection rule, so even an automated push to `main` waits for explicit human approval before the deployment runs.
+
+This split keeps the feedback loop fast in dev (commit, push, see it running) while keeping prod behind a deliberate decision.
+{% if include_terraform -%}
+The same pattern applies to Terraform: `terraform apply` runs automatically on push to `develop` for dev, and on push to `main` for prod (gated by the `prod` environment's required-reviewers rule).
+{% endif %}
+{% endif -%}

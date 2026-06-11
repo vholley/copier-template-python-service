@@ -1,0 +1,240 @@
+# Developing
+
+Day-to-day tasks: running code, running tests, adding dependencies, debugging.
+
+## Running code with uv
+
+uv runs Python through the workspace virtual environment automatically. No need to activate the venv manually unless you prefer to.
+
+```bash
+# Run a script
+uv run python path/to/script.py
+
+# Run a module
+uv run python -m module_name
+
+# Run a CLI tool from a dependency
+uv run pytest
+uv run pyright
+uv run ruff check .
+```
+
+To activate the venv so commands don't need the `uv run` prefix:
+
+```bash
+source .venv/bin/activate
+python path/to/script.py
+deactivate  # when finished
+```
+
+Activating helps in an interactive session. `uv run` is cleaner for one-off commands and scripts.
+
+## Running a specific app
+
+After `make new-app NAME=foo`, the app lives at `apps/foo/`.
+
+{% if app_framework == "fastapi" -%}
+Run locally with hot reload:
+
+```bash
+uv run uvicorn foo.main:app --reload --port 8080
+```
+
+Then hit `http://localhost:8080/healthz` to confirm it's up.
+{%- else -%}
+Run the entrypoint:
+
+```bash
+uv run python -m foo.main
+```
+{%- endif %}
+
+## Running tests
+
+```bash
+# All tests in the workspace
+make test
+
+# Tests for one app
+uv run pytest apps/foo/tests/
+
+# A single test file
+uv run pytest apps/foo/tests/test_main.py
+
+# A single test function
+uv run pytest apps/foo/tests/test_main.py::test_healthz_returns_ok
+
+# Stop on first failure
+uv run pytest -x
+
+# Drop into pdb on failure
+uv run pytest --pdb
+
+# Show captured print output
+uv run pytest -s
+
+# Filter by test name substring
+uv run pytest -k "invoice"
+```
+
+For async tests, `asyncio_mode = "auto"` in `pyproject.toml` removes the need for `@pytest.mark.asyncio` markers on every test.
+
+## Adding dependencies
+
+To the workspace dev group (tools like `pytest-mock`, `pytest-asyncio`):
+
+```bash
+uv add --group dev pytest-mock
+```
+
+To a specific app:
+
+```bash
+uv add --package foo httpx
+```
+
+To the shared library (visible to all apps):
+
+```bash
+uv add --package shared pydantic-extras
+```
+
+After adding, commit both `pyproject.toml` and `uv.lock`.
+
+## Updating dependencies
+
+```bash
+# Upgrade all dependencies within their version constraints
+uv lock --upgrade
+
+# Upgrade one specific package
+uv lock --upgrade-package pydantic
+```
+
+After `uv lock`, run `uv sync` to install the new versions, run `make ci` to confirm nothing broke, and commit `uv.lock`.
+
+## Working with secrets locally
+
+{% if use_gcp -%}
+Application Default Credentials let the same `get_secret()` call work locally and in Cloud Run.
+
+First-time setup (already in `bootstrap.sh`):
+
+```bash
+gcloud auth application-default login
+gcloud config set project {{ gcp_project_dev }}
+```
+
+After that, `get_secret("PORTAL_API_KEY")` reads from `{{ gcp_project_dev }}` using your credentials.
+
+**Creating a secret** (do this before calling `get_secret` for the first time):
+
+```bash
+# Create the secret
+gcloud secrets create PORTAL_API_KEY --replication-policy="automatic"
+
+# Set its value (prompts for input)
+echo -n "the-secret-value" | gcloud secrets versions add PORTAL_API_KEY --data-file=-
+```
+
+Grant your app's **runtime service account** access after deploying:
+
+```bash
+gcloud secrets add-iam-policy-binding PORTAL_API_KEY \
+  --member="serviceAccount:<runtime-sa>@{{ gcp_project_dev }}.iam.gserviceaccount.com" \
+  --role="roles/secretmanager.secretAccessor"
+```
+
+> **Runtime SA vs deploy SA.** The project has two CI/CD service accounts created by Terraform: one that deploys containers (`deploy`), one that runs Terraform (`terraform`). Neither of these is the identity your app runs *as* in Cloud Run. Cloud Run services run as a separate **runtime service account** — one you create per service with only the permissions that service needs (Secret Manager access, Pub/Sub, etc.). If you don't specify one, Cloud Run falls back to the Compute Engine default SA, which has broad project-level permissions. Create a dedicated runtime SA for each service and pass it to `gcloud run deploy` with `--service-account=<runtime-sa>@<project>.iam.gserviceaccount.com`. The specific SA name and roles depend on what your service needs.
+
+For local-only values that aren't secrets (test fixtures, mock URLs, throwaway config), create `.env` at the project root:
+
+```
+PORTAL_URL=http://localhost:8080
+MAX_RETRIES=1
+```
+
+`.env` is gitignored. Never put real secrets in `.env`; use Secret Manager.
+{%- else -%}
+Use `.env` at the project root for local config:
+
+```
+PORTAL_URL=http://localhost:8080
+MAX_RETRIES=1
+```
+
+`.env` is gitignored. `pydantic-settings` reads it automatically at app startup.
+{%- endif %}
+
+{% if include_docker -%}
+## Building and running a container locally
+
+Build the image:
+
+```bash
+make build NAME=foo
+```
+
+This produces an image tagged `{{ project_name }}-foo:local`.
+
+Run it:
+
+```bash
+docker run --rm -p 8080:8080 \
+  -e GCP_PROJECT={{ gcp_project_dev }} \
+  -v ~/.config/gcloud:/root/.config/gcloud \
+  {{ project_name }}-foo:local
+```
+
+The volume mount makes your gcloud ADC available inside the container, so Secret Manager calls work the same way they would in Cloud Run.
+
+{% endif -%}
+## Pre-commit hooks
+
+Hooks run on every `git commit`. If a hook modifies files (ruff's autofix, for example), the commit is aborted; re-stage the modified files and commit again.
+
+```bash
+# Run all hooks against all files (after editing hook config)
+uv run pre-commit run --all-files
+
+# Update hook versions to latest
+uv run pre-commit autoupdate
+```
+
+To bypass hooks for an emergency commit:
+
+```bash
+git commit --no-verify
+```
+
+Use rarely. The hooks keep `main` clean; bypassing pushes cleanup work to whoever notices later.
+
+## VS Code
+
+The repo commits `.vscode/settings.json` and `.vscode/extensions.json`. On first opening the project, VS Code prompts to install the recommended extensions.
+
+Python interpreter selection should auto-detect `.venv/bin/python`. If it doesn't: `Cmd+Shift+P` → "Python: Select Interpreter" → choose the workspace `.venv`.
+
+To run tests from the editor: open the Testing view in the sidebar (test-tube icon). Run individual tests or files via the play button.
+
+To debug: open a Python file, click in the gutter to set a breakpoint, then `F5`. Edit `.vscode/launch.json` for a non-default entrypoint.
+
+## Common troubleshooting
+
+**`uv: command not found`.** Re-run `./scripts/bootstrap.sh`, which installs uv. Manual fallback: `curl -LsSf https://astral.sh/uv/install.sh | sh`.
+
+**`ModuleNotFoundError` for a workspace package.** Run `uv sync`. This is the symptom when dependencies are out of date or a new app was scaffolded but not synced.
+
+**Pre-commit hook fails on commit.** Run `make fix` (ruff autofix and format), re-stage, commit again. For pyright failures, run `make typecheck` to see the full output.
+
+**Pyright reports errors on third-party imports.** The cause: missing type stubs for the package. Try `uv add --group dev types-<package>`. If no stubs exist, the warning is acceptable (the template downgrades `reportMissingTypeStubs` to a warning, not an error).
+
+**Tests pass locally but fail in CI.** Most often, `uv.lock` isn't committed or a fixture path differs between environments. Run `uv sync` locally, then `make ci` to mirror the CI checks exactly.
+
+{% if use_gcp -%}
+**`google.api_core.exceptions.PermissionDenied` from `get_secret()`.** Re-authenticate: `gcloud auth application-default login`. Then confirm the project: `gcloud config get-value project`.
+
+**`docker push` fails with auth error.** Run `gcloud auth configure-docker us-central1-docker.pkg.dev --quiet`.
+
+**Cloud Run service starts but no logs appear in Cloud Logging.** The app needs to call `configure_logging()` once at startup. Without it, structlog writes nowhere visible.
+{%- endif %}

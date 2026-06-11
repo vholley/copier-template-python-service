@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Scaffold a new app from app-template/.
+# Usage: scripts/new-app.sh <app_name>
+
+if [[ $# -ne 1 ]]; then
+    echo "Usage: $0 <app_name>" >&2
+    exit 1
+fi
+
+APP_NAME="$1"
+
+# Snake_case validation: app names become Python package names directly.
+if ! [[ "$APP_NAME" =~ ^[a-z][a-z0-9_]*$ ]]; then
+    echo "Error: app name must be snake_case (lowercase letters, digits, underscores; starts with a letter)" >&2
+    echo "Got: $APP_NAME" >&2
+    exit 1
+fi
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+TEMPLATE_DIR="$REPO_ROOT/app-template"
+TARGET_DIR="$REPO_ROOT/apps/$APP_NAME"
+
+if [[ -d "$TARGET_DIR" ]]; then
+    echo "Error: $TARGET_DIR already exists" >&2
+    exit 1
+fi
+
+if [[ ! -d "$TEMPLATE_DIR" ]]; then
+    echo "Error: $TEMPLATE_DIR does not exist" >&2
+    exit 1
+fi
+
+# Copy the template
+cp -r "$TEMPLATE_DIR" "$TARGET_DIR"
+
+# Rename __APP_NAME__ directories (depth-first, in case of nesting)
+find "$TARGET_DIR" -depth -type d -name "__APP_NAME__" | while read -r dir; do
+    mv "$dir" "$(dirname "$dir")/$APP_NAME"
+done
+
+# Replace __APP_NAME__ in file contents (sed -i.bak for macOS portability)
+find "$TARGET_DIR" -type f -exec sed -i.bak "s/__APP_NAME__/$APP_NAME/g" {} \;
+find "$TARGET_DIR" -name "*.bak" -delete
+
+echo "Created apps/$APP_NAME"
+echo
+echo "Next: uv sync && make test"

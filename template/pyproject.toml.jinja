@@ -1,0 +1,88 @@
+[tool.uv.workspace]
+members = ["libs/*", "apps/*"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=6.0",
+    "pytest-asyncio>=0.24.0",
+    "ruff>=0.8.0",
+    "pyright>=1.1.390",
+    "pre-commit>=4.0",
+]
+
+# ---------------------------------------------------------------------------
+# Ruff: lint + format. Replaces black, isort, flake8, and most of pylint.
+# ---------------------------------------------------------------------------
+
+[tool.ruff]
+target-version = "py{{ python_version | replace('.', '') }}"
+line-length = 100
+exclude = ["app-template"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "B",    # flake8-bugbear (likely bugs)
+    "C4",   # flake8-comprehensions
+    "UP",   # pyupgrade (modernize syntax)
+    "N",    # pep8-naming
+    "D",    # pydocstyle (Google convention)
+    "S",    # flake8-bandit (security)
+    "ANN",  # flake8-annotations (type hints)
+    "RUF",  # ruff-specific rules
+    "SIM",  # flake8-simplify
+    "TCH",  # flake8-type-checking
+    "PT",   # flake8-pytest-style
+    "T20",  # flake8-print (no print statements; use logging)
+    "DTZ",  # flake8-datetimez (require timezone-aware datetimes)
+    "A",    # flake8-builtins (no shadowing builtins like list, id, type)
+    "PTH",  # flake8-use-pathlib (prefer pathlib over os.path)
+    "PERF", # perflint (performance anti-patterns)
+    "G",    # flake8-logging-format (use % formatting in log calls, not f-strings)
+    "PLE",  # pylint errors (bad return in __init__, duplicate bases, await outside async)
+]
+ignore = [
+    "D100",   # missing docstring in public module
+    "D104",   # missing docstring in public package
+    "ANN401", # explicit Any sometimes needed for legitimate generics
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/**/*.py" = [
+    "D",      # docstrings not required in tests
+    "S101",   # assert is fine in tests
+    "ANN",    # less strict typing in tests
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+# ---------------------------------------------------------------------------
+# pytest + coverage
+# ---------------------------------------------------------------------------
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+addopts = ["-ra", "--strict-markers", "--strict-config"]
+testpaths = ["libs", "apps"]
+python_files = ["test_*.py", "*_test.py"]
+asyncio_mode = "auto"
+
+[tool.coverage.run]
+branch = true
+source = ["src"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+]

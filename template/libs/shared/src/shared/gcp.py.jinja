@@ -1,0 +1,44 @@
+"""GCP client wrappers and helpers."""
+
+from __future__ import annotations
+
+import functools
+import os
+
+from google.cloud import secretmanager
+
+
+@functools.cache
+def secret_client() -> secretmanager.SecretManagerServiceClient:
+    """Return a cached Secret Manager client."""
+    return secretmanager.SecretManagerServiceClient()
+
+
+def get_secret(
+    name: str,
+    project: str | None = None,
+    version: str = "latest",
+) -> str:
+    """Read a secret from GCP Secret Manager.
+
+    Args:
+        name: Secret name (e.g. "PORTAL_API_KEY"). Case-sensitive.
+        project: GCP project ID. Defaults to the GCP_PROJECT env var.
+        version: Secret version. Defaults to "latest".
+
+    Returns:
+        The secret payload as a UTF-8 string.
+
+    Raises:
+        ValueError: If no project is provided and GCP_PROJECT is unset.
+        google.api_core.exceptions.NotFound: If the secret does not exist.
+    """
+    project = project or os.environ.get("GCP_PROJECT")
+    if not project:
+        raise ValueError(
+            "GCP project not provided and GCP_PROJECT env var is unset."
+        )
+
+    secret_path = f"projects/{project}/secrets/{name}/versions/{version}"
+    response = secret_client().access_secret_version(name=secret_path)
+    return response.payload.data.decode("utf-8")

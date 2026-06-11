@@ -1,0 +1,6 @@
+terraform {
+  backend "gcs" {
+    bucket = "{{ gcp_project_dev }}-tfstate"
+    prefix = "{{ project_name }}/dev"
+  }
+}

@@ -1,0 +1,41 @@
+{% if app_framework == "fastapi" -%}
+"""__APP_NAME__ entrypoint."""
+
+from fastapi import FastAPI
+{%- if use_gcp %}
+
+from shared.logging_setup import configure_logging
+
+configure_logging()
+{%- endif %}
+
+app = FastAPI(title="__APP_NAME__")
+
+
+@app.get("/healthz")
+def healthz() -> dict[str, str]:
+    """Liveness probe.
+
+    Returns:
+        A status payload.
+    """
+    return {"status": "ok"}
+{%- else -%}
+"""__APP_NAME__ entrypoint."""
+{%- if use_gcp %}
+
+from shared.logging_setup import configure_logging
+{%- endif %}
+
+
+def main() -> None:
+    """Run the app."""
+    {%- if use_gcp %}
+    configure_logging()
+    {%- endif %}
+    # Application logic goes here.
+
+
+if __name__ == "__main__":
+    main()
+{%- endif %}

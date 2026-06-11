@@ -1,0 +1,445 @@
+# AGENTS.md
+
+Project-specific instructions for AI coding assistants. Read by Claude Code, Gemini CLI, GitHub Copilot, and other LLM tools.
+
+## Principles
+
+- Don't assume. Don't hide confusion. Surface tradeoffs.
+- Minimum code that solves the problem. Nothing speculative.
+- Touch only what you must. Clean up only your own mess.
+- Define success criteria. Loop until verified.
+- One task, one scope. Work on exactly what was asked. Note everything else; act on nothing else.
+
+## Scope
+
+**Work in bite-sized units.** Each task — each branch, each PR, each session — addresses one logical concern. When scope expands mid-task, stop and surface it before continuing.
+
+A concern is not a file count. It is a coherent reason for a change: fixing a specific bug, adding a specific endpoint, refactoring one abstraction. "Improve auth" is not a concern. "Fix token refresh not handling 401 from the portal" is.
+
+**Commits group related changes.** A commit should be explainable in one conventional-commit subject line. If "and" appears naturally in the subject (`fix token refresh and update logging`), that is two commits.
+
+**PRs are topically scoped.** Every commit in a PR should support the same PR title. A PR mixing a bug fix, a refactor, and a dependency bump is three PRs — even if all three were written in the same session. Split before requesting review.
+
+Signs that scope has crept:
+- The PR title needs "and" or a semicolon
+- The diff touches unrelated parts of the system
+- The reviewer needs different context to evaluate different parts of the PR
+
+**Never mix change types in a single task or PR.** The following must always be separate PRs:
+
+- A bug fix and an unrelated feature addition
+- Business logic changes and infrastructure changes (Terraform, Dockerfile, CI config)
+- Dependency upgrades and behavior changes
+- Refactoring and new functionality
+- Security hardening and unrelated feature work
+- Multiple unrelated bugs bundled together
+
+**Never bundle unrelated cleanup into feature work.** A stray `print`, a renamed variable, an unused import — these belong in a separate `chore:` PR or not at all. Bundling them into feature PRs obscures intent and inflates review surface.
+
+**If scope expands, stop and raise it.** Explain what the original scope was, what the additional work is, and why it appears necessary. Do not proceed with out-of-scope changes silently. When scope has already crept: create separate branches from the current state rather than stuffing everything into one PR.
+
+## Collaboration
+
+This codebase uses AI to help write and design software. The goal is not to produce code as fast as possible — it is to produce code that is understood, owned, and maintainable. Act as a technical collaborator, not a code dispenser.
+
+**Design before coding.** For any change that touches more than one file or introduces a new component, describe the design in plain language before writing any code: what is being added, how the pieces interact, how data flows, and what the interface looks like. Get confirmation before proceeding. A few minutes of design alignment prevents hours of rework.
+
+**Explain important technical decisions.** When making a non-obvious choice — which data model shape to use, whether to go sync or async, which GCP service to use, how to structure error handling — explain the choice and the reasoning. The engineer should be able to articulate why the code is written the way it is, not just that it works.
+
+**Surface tradeoffs on key decisions.** When there is a meaningful alternative, present it. State the options, the tradeoffs, and a recommendation with reasoning. Do not make architectural decisions silently. Examples that warrant this treatment: choosing between Cloud Tasks and Pub/Sub, between polling and event-driven design, between a single service and splitting responsibilities across two.
+
+**Explain infrastructure in plain language.** Any Terraform resource, IAM binding, or GCP service introduced must be accompanied by a clear explanation of what it does, what it costs, what permissions it requires, and why it was the right choice. Infrastructure decisions made without understanding are a production and security risk.
+
+**Flag and explain non-obvious patterns.** If code uses an advanced or unfamiliar pattern — async context managers, complex Pydantic validators, `Protocol`-based dependency injection, retry decorators — briefly explain the pattern and why it is being used here. Do not assume the engineer will look it up.
+
+**Guide the design process, do not bypass it.** When an engineer describes a feature they want to build, help them think through the design before writing code. Useful questions: What does success look like? Who calls this and when? What happens on failure? What is the expected scale? What data needs to be persisted? The answers shape the implementation.
+
+**Teach bugs, don't just fix them.** When fixing a bug, explain what caused it, why the code behaved that way, and what the fix does differently. A fix the engineer does not understand will be repeated. Build debugging intuition, not just a working diff.
+
+**Summarize after implementing.** At the end of any non-trivial piece of work, give a brief summary: what was built, what key decisions were made, and anything to watch out for or follow up on. Every session should end with a clear picture of what was just added to the codebase.
+
+## When to stop and ask
+
+Before proceeding with any of the following, pause and reconsider. These are not implementation details — they carry consequences beyond the current task.
+
+- **New GCP resource** (Cloud SQL, Pub/Sub topic, new Cloud Run service, storage bucket, etc.) — requires cost, IAM, and security review.
+- **Changes to `libs/shared/`** — affects every app in the workspace. A bug introduced here is a bug in every service.
+- **Breaking API changes** — removing or renaming fields, changing response shapes, or removing endpoints will silently break existing clients.
+- **Data model changes affecting persisted data** — fields removed or renamed in models used for storage require a migration plan.
+- **New external service integration** — network dependency, auth, error handling, and retry behavior all need to be designed explicitly, not guessed.
+- **Changes to CI/CD pipelines** — a broken pipeline blocks shipping.
+- **Significant new dependency** — runtime dependencies increase attack surface and build time; evaluate alternatives and check for CVEs before adding.
+- **Request conflicts with a project rule** — if asked for something that contradicts a convention, security rule, or architectural guideline in this file (e.g., "just use `requests`", "give it `roles/editor` for now"), flag the conflict explicitly, explain the risk, and let the decision be made with full information. Do not silently comply and do not silently refuse.
+
+## Project
+
+<!-- One or two sentences describing what this project does. Replace this placeholder. -->
+TODO: describe the project's purpose.
+
+## Stack
+
+- Python {{ python_version }}, managed by uv in a workspace layout
+- Ruff (lint + format), pyright in strict mode, pytest
+{% if app_framework == "fastapi" -%}
+- FastAPI for HTTP services
+{% endif -%}
+{% if use_gcp -%}
+- Deployed to Google Cloud Run via GitHub Actions and Workload Identity Federation
+- Cloud Logging via structlog (JSON to stdout)
+- Secrets via Google Secret Manager
+{% endif %}
+
+## Layout
+
+- `app-template/`: scaffold for new apps — **not a deployed service and not a uv workspace member**. Use `make new-app NAME=<name>` to copy it into `apps/`. Do not edit this to fix a specific app; edit the app in `apps/<name>/` directly.
+- `apps/<name>/`: deployable services and jobs, each a uv workspace member
+  - `src/<name>/`: Python package (source layout). Import as `from <name>.module import ...`
+  - `tests/`: tests live alongside the app, not in a top-level `tests/` directory
+  - `Dockerfile`: multi-stage build — always run `docker build` from the **workspace root**, not from inside the app directory
+- `libs/shared/`: shared library imported by all apps as `from shared.<module> import ...`
+  - `config.py`: `BaseAppSettings` — subclass this for app config; reads env vars and `.env` files
+  - `logging_setup.py`: `configure_logging()` — call once at startup; outputs JSON in Cloud Run, colored console locally
+{% if use_gcp -%}
+  - `gcp.py`: `get_secret(name)` — fetches a secret from GCP Secret Manager
+{% endif -%}
+- **Shared library boundary.** `libs/shared/` is for infrastructure and cross-cutting concerns: logging, config, GCP clients, retry utilities. It is not for business logic. If two apps need the same domain logic, that is a signal to reconsider the service boundary — not to put business logic in `shared/`.
+{% if include_terraform -%}
+- `infra/terraform/`: Terraform for GCP infrastructure, split into `environments/dev/` and `environments/prod/`
+{% endif -%}
+- `scripts/`: operational shell scripts (`bootstrap.sh`, `new-app.sh`, `deploy.sh`{% if include_terraform %}, `tf-bootstrap.sh`{% endif %}, `restore-from-template.sh`)
+- `docs/`: `SETUP.md`, `CONVENTIONS.md`, `DEVELOPING.md`, `RATIONALE.md` — gitignored and local to your checkout; generated by the project template. **Read these before writing code.**
+
+## Conventions
+
+Conventions are documented in `docs/CONVENTIONS.md`. Read that file before making non-trivial code changes. Highlights:
+
+- Strict type annotations on all functions. Pyright runs in strict mode.
+- Pydantic for data that crosses module boundaries.
+- Use `BaseAppSettings` (from `shared.config`) for all app config. Never read `os.environ` directly.
+- Call `configure_logging()` (from `shared.logging_setup`) once at app startup, before any log statements.
+{% if use_gcp -%}
+- Use `get_secret()` (from `shared.gcp`) for secrets at runtime. Never hardcode credentials or read them from env vars directly.
+{% endif -%}
+- structlog for logging; never `print` outside scripts.
+- httpx for HTTP clients; never `requests`.
+- Conventional commits for commit messages (`feat:`, `fix:`, `chore:`, etc.).
+- Use descriptive branch names following `<type>/<short-description>` (e.g., `feat/add-auth-endpoint`).
+{% if app_framework == "fastapi" -%}
+- Every FastAPI service must expose a health check endpoint (e.g. `GET /healthz` returning `{"status": "ok"}`). Cloud Run uses this to determine whether the container is ready to serve traffic.
+{% endif -%}
+- Log the service name and key config values (without secrets) once at startup. This makes it possible to confirm what was deployed and with what configuration from logs alone.
+
+## Documentation
+
+**The minimal-context bar.** Documentation passes if someone who did not write the code can understand what it does and why from the docs alone. Write for the next engineer, not for yourself.
+
+**Every app needs a README.** Create `apps/<name>/README.md` for each service covering at minimum:
+- What the service does and why it exists
+- What triggers it (HTTP request, Pub/Sub message, scheduled job, etc.)
+- What external systems it depends on
+- What it produces or modifies
+
+**Update documentation in the same PR as the code.** If a PR changes behavior, it must update the relevant documentation. Stale docs are actively misleading. "I'll update the docs in a follow-up PR" is not acceptable.
+
+{% if app_framework == "fastapi" -%}
+**Keep OpenAPI docstrings accurate.** FastAPI generates its interactive API docs (`/docs`) from route function docstrings and Pydantic model `Field(description=...)` annotations. These are the client-facing contract — a consumer should be able to integrate against the generated docs without reading source code.
+
+```python
+class InvoiceResponse(BaseModel):
+    id: str = Field(description="Unique invoice identifier.")
+    amount: float = Field(description="Invoice total in the account's base currency.")
+
+@app.get("/invoices/{id}", response_model=InvoiceResponse)
+async def get_invoice(id: str) -> InvoiceResponse:
+    """Fetch a single invoice by ID.
+
+    Returns the invoice fields visible to the authenticated user.
+    Raises 404 if the invoice does not exist or is not accessible.
+    """
+    ...
+```
+
+{% endif -%}
+**Document significant architectural decisions in the nearest README.** When a non-obvious technical decision is made — choosing a GCP service, adopting a pattern, deciding how to split responsibilities between services — add a brief note to the most relevant README (typically `apps/<name>/README.md` or the project root `README.md`): the decision, the alternatives considered, and why this one was chosen. Future engineers cannot reconstruct this context from code alone.
+
+{% if app_framework == "fastapi" -%}
+## API design
+
+**Use correct HTTP status codes.**
+
+- `200 OK`: successful read or update that returns a body
+- `201 Created`: resource was created; include a `Location` header pointing to the new resource
+- `204 No Content`: successful operation with no response body (e.g., delete)
+- `400 Bad Request`: client sent invalid input
+- `401 Unauthorized`: missing or invalid credentials
+- `403 Forbidden`: authenticated but not permitted to perform the action
+- `404 Not Found`: resource does not exist
+- `422 Unprocessable Entity`: FastAPI's default for Pydantic validation failures — do not override this
+- `500 Internal Server Error`: unhandled server-side failure; never return stack traces or internal details
+
+**Separate request, domain, and response models.** Never return an internal domain model directly to a client. Define explicit response schemas so internal refactors don't become breaking API changes.
+
+```python
+# Internal domain model — not exposed directly
+class Invoice(BaseModel):
+    id: str
+    amount_cents: int
+    _internal_flag: bool
+
+# Response model — only what the client should see
+class InvoiceResponse(BaseModel):
+    id: str
+    amount: float
+```
+
+**Paginate list endpoints.** Any endpoint returning a collection must support pagination. Use offset/limit or cursor-based pagination consistently, and return metadata (`total` or `next_cursor`) alongside the items.
+
+**Make write operations idempotent where possible.** PUT and PATCH should produce the same result when called multiple times with the same input. Document whether a POST is idempotent.
+
+**Validate at the boundary.** Use Pydantic models on all request bodies. Do not access `request.body()` directly or build manual parsing logic — that is what Pydantic is for.
+
+**Use a consistent error response schema.** FastAPI's default `{"detail": "..."}` shape is acceptable, but whatever format is chosen must be used consistently across every endpoint. Never return ad-hoc error shapes. Define a shared error model and use it in all exception handlers:
+
+```python
+class ErrorResponse(BaseModel):
+    code: str       # machine-readable, e.g. "invoice_not_found"
+    message: str    # human-readable description
+
+@app.exception_handler(PortalInvoiceNotFoundError)
+async def invoice_not_found_handler(request: Request, exc: PortalInvoiceNotFoundError) -> JSONResponse:
+    return JSONResponse(status_code=404, content=ErrorResponse(code="invoice_not_found", message=str(exc)).model_dump())
+```
+
+**Wire authentication via dependency injection.** Use FastAPI's `Depends()` for auth so it is explicit, testable, and applied consistently. Do not implement auth checks inline inside route functions.
+
+```python
+async def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
+    ...
+
+@app.get("/invoices/{id}")
+async def get_invoice(id: str, user: User = Depends(get_current_user)) -> InvoiceResponse:
+    ...
+```
+
+**Version breaking changes with a path prefix.** If a change cannot be made backward-compatible, introduce a new version prefix (`/v2/...`) rather than modifying the existing endpoint in place. Clients on `/v1/` must not break when `/v2/` is deployed.
+
+{% endif -%}
+## Testing
+
+Tests live in `apps/<name>/tests/`, alongside the app — not in a top-level `tests/` directory. One test file per source module:
+
+```
+apps/my_service/
+├── src/my_service/
+│   ├── main.py
+│   └── processor.py
+└── tests/
+    ├── test_main.py
+    └── test_processor.py
+```
+
+Name test functions to describe the case: `test_<what>_<outcome>`.
+
+```python
+def test_fetch_invoice_returns_payload_on_success() -> None: ...
+def test_fetch_invoice_raises_on_auth_failure() -> None: ...
+```
+
+Use `@pytest.fixture` for shared setup. Mock all external services — never hit real GCP APIs, real HTTP endpoints, or real databases from tests. Use `unittest.mock` or `pytest-mock` (add `pytest-mock` to dev dependencies first):
+
+```python
+from unittest.mock import patch
+
+@patch("my_service.processor.httpx.AsyncClient")
+def test_fetch_data(mock_client) -> None:
+    mock_client.return_value.__enter__.return_value.get.return_value.json.return_value = {"id": "1"}
+    ...
+```
+
+For async tests: add `pytest-asyncio` to dev dependencies (`uv add --group dev pytest-asyncio`) and set `asyncio_mode = "auto"` in `[tool.pytest.ini_options]` in `pyproject.toml`. Async test functions then run without an explicit `@pytest.mark.asyncio` marker on each one.
+
+Coverage target: ~80% on new code. Higher for `libs/shared/` — bugs there affect every app.
+
+**Test independence.** Each test must set up and tear down its own state. Tests that pass individually but fail together signal mutable state leaking between tests and are the most common source of CI flakiness. No mutable module-level test data. Be deliberate about fixture scope: `function` scope (the default) is safest; use `session` scope only for read-only, expensive setup.
+
+**Mock at the boundary, not deep inside.** Mock the external interface — the HTTP client, the GCP client — not internal helpers. Patching a private function to make a test pass couples the test to the implementation; it won't survive a refactor and won't catch real integration bugs.
+
+**Arrange-Act-Assert structure.** Each test has three phases: set up state, perform the operation, verify the result. One logical assertion per test — not one `assert` statement, but one thing being verified. If the test name says "raises on auth failure", assert on the specific exception type, not just that something was raised.
+
+**Parameterize for multiple cases.** Use `@pytest.mark.parametrize` when the same logic needs to be exercised across multiple inputs. This avoids copy-paste test functions that diverge silently and makes covered cases explicit.
+
+```python
+@pytest.mark.parametrize("status_code,expected", [(401, PortalAuthenticationError), (404, PortalInvoiceNotFoundError)])
+async def test_fetch_invoice_raises_on_error(status_code: int, expected: type[Exception]) -> None:
+    ...
+```
+
+**Test edge cases explicitly.** A complete test suite covers: the happy path, error and exception paths, boundary conditions (empty collections, `None` inputs, zero values), and auth/permission failures where the code handles them. A suite that only tests the happy path produces a misleading coverage number.
+
+**Tests must be able to catch real bugs.** A test that mocks so thoroughly it can't fail even when the real integration is broken provides false confidence. If a test would still pass after deleting the function under test, it is not verifying anything. When in doubt, ask: what real breakage would this test catch?
+
+**Hard-to-test code is a design signal.** If writing a test requires a long chain of nested `.return_value` mocks or extensive setup to reach the logic under test, the code has a design problem — usually too many responsibilities in one function or tight coupling to its dependencies. The fix is to refactor toward dependency injection and I/O separation, not to write a more elaborate mock.
+
+**Do not test framework wiring.** Tests should cover business logic, not that FastAPI registered a route, that Pydantic instantiates a model, or that a config value loads from an env var. These are framework guarantees. Testing them produces coverage numbers that don't reflect real protection.
+
+- `make test`: run all tests with coverage
+- `uv run pytest apps/<name>/`: all tests for a single app
+- `uv run pytest apps/<name>/tests/test_module.py::test_name -s`: single test with stdout
+
+## Security and safety
+
+- Never log PII.
+- Never log credentials, tokens, or API keys.
+- Return generic error messages to clients; log detail server-side.
+- Validate and sanitize all external input at API boundaries — HTTP requests, Pub/Sub messages, and any data crossing a service boundary.
+- Don't weaken or bypass authentication, even temporarily.
+- All API changes require security review.
+- Prefer reversible operations. Test destructive changes (deletes, migrations, schema changes) in dev before prod.
+- Infrastructure changes (Terraform) require the same review discipline as application code.
+
+**IAM and service accounts:**
+
+- **No primitive IAM roles.** Never grant `roles/owner`, `roles/editor`, or `roles/viewer`. Always use a predefined role scoped to what the service actually needs (e.g., `roles/secretmanager.secretAccessor`), or create a custom role if nothing fits.
+- **One service account per service.** Shared service accounts make access auditing impossible and widen the blast radius on compromise.
+- **Resource-scoped bindings over project-scoped.** Grant IAM at the resource level when possible — accessor on a specific secret, not all secrets in the project. Terraform makes this straightforward.
+- **No service account key files.** Never create or download a service account key. Use Workload Identity Federation for GitHub Actions and attached service accounts for Cloud Run. A requirement for a key file is a signal to use WIF instead.
+- **Justify every IAM grant in Terraform.** Any `google_project_iam_member`, `google_project_iam_binding`, or `google_service_account_iam_*` resource must include a comment explaining the minimum required role and why it is needed.
+
+**Container security:**
+
+- **Do not run as root.** Add a non-root `USER` instruction to the Dockerfile.
+- **Use a minimal base image.** Prefer a slim or distroless variant. Fewer packages mean a smaller attack surface and faster image pulls.
+- **Pin base image versions.** Use a fully specified tag (e.g., `python:3.12.9-slim-bookworm`) rather than a floating tag like `python:3.12-slim`. Unpinned images can change silently between builds, introducing unexpected behavior or vulnerabilities.
+{% if app_framework == "fastapi" -%}
+- **Configure CORS explicitly.** Never set `allow_origins=["*"]` on a service that handles authenticated requests or sensitive data. Define the exact list of allowed origins. Overly permissive CORS allows malicious sites to make credentialed requests on behalf of your users.
+{% endif -%}
+
+**Dependencies:**
+
+- **Audit for known CVEs.** Run `uv run pip-audit` before adding new packages and in CI. A failing audit should block merge the same as a failing test.
+
+## Coding
+
+Python is the standard language for this project. Default to Python unless the task is data-related, in which case use SQL. Only use other programming languages when specifically requested.
+
+When implementation involves meaningful tradeoffs, include the options and their implications in the plan. When selecting libraries, frameworks, or design patterns, consider alternatives beyond the most popular defaults when better suited to the specific requirements.
+- Discuss first: choosing between recursion and iteration for a tree traversal with memory constraints.
+- Write directly: a function to reverse a string.
+
+When asked to fix or modify code, change only what the request requires. Do not refactor surrounding code unless asked. If you notice a bug or improvement adjacent to the requested change, flag it at the end of the response without making the change.
+
+When the user shares code with a specific question, answer the question and flag critical issues only. Do not perform unsolicited code review unless asked.
+
+Use 4-space indentation and follow conventions of the respective language. Comment code to explain **why**, not what. Add comments for: intent or reasoning behind non-obvious decisions, algorithmic complexity, assumptions or edge cases not apparent from the code, workarounds or performance considerations, and business logic embedded in queries. Write comments understandable by someone without full context of the code. Use docstrings for functions, classes, and modules per language convention. Do not comment self-evident operations.
+- Correct: `# Boyer-Moore outperformed binary search for this data distribution`
+- Incorrect: `# loop through the list`
+
+Additive changes to APIs and data models are safe: new optional fields, new endpoints, new enum values. Removing or renaming fields, changing types, and removing endpoints are breaking changes that will silently break existing clients or corrupt stored data. If a breaking change is necessary, raise it before implementing — it requires a versioning strategy or a coordinated migration plan.
+
+## Programming style
+
+**Separate I/O from computation.** Write pure functions that transform data, and keep fetching and writing in a separate layer. A function that fetches from an API and processes the result is hard to test; two functions — one that fetches, one that transforms — means the logic is testable without mocks.
+
+**Functions and modules before classes.** Reach for a class only when you need to encapsulate mutable state together with the behavior that operates on it. For stateless logic, a module with functions is simpler and easier to test. Avoid `class XProcessor` with a single method — that is just a function with extra steps.
+
+**Composition over inheritance.** Avoid deep inheritance hierarchies. Python's duck typing and `Protocol` handle polymorphism without inheritance in most cases. Prefer injecting a collaborator over subclassing it.
+
+**Prefer immutable data.** Avoid mutating function arguments or shared mutable state. Pydantic models support `model_config = ConfigDict(frozen=True)` for immutability; use it for models that represent a snapshot. Use frozen dataclasses for internal data structures.
+
+**Small, single-responsibility functions.** If a function's name needs "and", split it. If you need to scroll to understand a function, decompose it. Complexity lives in the composition of simple pieces, not in individual functions.
+
+**Explicit over implicit.** Pass dependencies — clients, settings, loggers — as function arguments or constructor parameters. Avoid module-level globals that fetch their own state; they make behavior hard to follow and tests painful to write.
+
+## Common commands
+
+- `make help`: list all targets
+- `make ci`: full local CI run (lint, typecheck, test). Use this before pushing.
+- `make fix`: auto-fix lint violations and reformat code with Ruff.
+- `make new-app NAME=<kebab-case>`: scaffold a new app from `app-template/`; then `uv sync` to wire it into the workspace
+- `uv run pytest path/to/test_file.py::test_name`: run a single test
+
+## Branching
+
+This project uses Git Flow:
+
+- `main`: production-stable code. Merges here trigger a deployment to `prod`.
+- `develop`: integration branch. Merges here trigger a deployment to `dev`.
+- Feature branches: cut from `develop`, PR back to `develop`. Use descriptive names following `<type>/<short-description>` (e.g., `feat/add-auth-endpoint`, `fix/token-refresh`).
+- Hotfixes: cut from `main`, PR to both `main` and `develop`. Use a `fix/` prefix and describe the problem.
+
+Do not commit directly to `main` or `develop`. All changes go through a PR.
+
+**Commits and PR titles follow conventional commit format.** Branch names carry a type prefix (e.g., `feat/`, `fix/`), and every commit on a branch must use the matching conventional commit type. The PR title must match.
+
+PRs are squash-merged, so the PR title becomes the commit message on `develop` or `main`. Use:
+
+```
+<type>(<optional scope>): <subject under 72 chars, imperative mood>
+```
+
+The commit type must reflect the branch's Git Flow role:
+
+- Branches introducing new behavior → all commits use `feat:`
+- Branches correcting a bug or hotfix → all commits use `fix:`
+- Maintenance-only branches → `chore:`, `docs:`, `refactor:`, etc.
+
+A branch whose commits span multiple types should be split before review. The reviewer should never need to infer whether a PR is a feature, a fix, or a refactor from reading the diff.
+
+**Commit types:**
+
+- `feat:` — new behavior visible to users or downstream services
+- `fix:` — corrects a bug
+- `chore:` — maintenance that does not change behavior (deps, config, tooling)
+- `docs:` — documentation only
+- `refactor:` — restructuring without behavior change
+- `test:` — adding or correcting tests only
+- `perf:` — measurable performance improvement
+- `ci:` — CI/CD pipeline changes
+- `build:` — build system or packaging changes
+- `style:` — formatting only, no logic change
+
+**Keep PRs small and focused.** One concern per PR. A PR that changes business logic, updates the Dockerfile, and bumps dependencies is three PRs. Smaller PRs are easier to evaluate, revert, and reason about. If scope has crept mid-implementation, split before merging. See **Scope** above — those rules apply equally here. A PR that cannot be described by a single conventional commit type — or whose commits span unrelated areas of the codebase — must be split.
+
+**Use draft PRs for work in progress.** Open a draft PR as soon as a branch has meaningful commits. Mark it ready for review only after the self-review checklist passes. Draft status signals intent without inviting premature feedback.
+
+**Self-review before merging.** Before merging a PR:
+- `make ci` passes
+- No debug code, stray `print` statements, or unresolved `# TODO` left in
+- Diff contains no unintentional file changes
+- New logic has corresponding tests
+
+## What to avoid
+
+- Don't commit secrets, API keys, or credentials. Use Secret Manager.
+- Don't bypass type errors with `# pyright: ignore` without justification.
+- Don't edit files in `docs/`. They come from the project template; changes are overwritten by `copier update --trust`.
+- Don't add dependencies casually. Large additions warrant discussion in the PR.
+
+## Project-specific notes
+
+<!-- Use this section for context that should persist across sessions: tricky integrations, anti-patterns to watch for, in-flight migrations, gotchas. -->
+TODO: fill in as project-specific context emerges.
+
+## Bug and issue documentation
+
+**During development.** When a non-trivial bug is found and fixed, add a brief entry to `## Project-specific notes` above. Capture:
+- The symptom (what the incorrect behavior looked like)
+- The root cause (why the code behaved that way)
+- The fix (what was changed and why it resolves it)
+- How to avoid it in future
+
+Trivial fixes — typos, simple off-by-ones in brand new code — do not need documentation. Document bugs that caused incorrect behavior, data problems, or took significant time to diagnose. After fixing a non-trivial bug, prompt the engineer to add an entry before closing the session.
+
+**After the project reaches production.** Production incidents warrant a more structured record than a bullet in Project-specific notes. On the first production incident, create a `docs/incidents/` directory (it is not in the template — create it when needed) and add a Markdown file per incident using this structure:
+
+```markdown
+## <Short title> — <YYYY-MM-DD>
+
+**What happened:** <Brief description of the failure and timeline>
+**Impact:** <Who was affected, for how long, what was degraded>
+**Root cause:** <The underlying reason, not just the proximate trigger>
+**Resolution:** <What was done to restore service>
+**Prevention:** <What change prevents recurrence — code fix, alert, process>
+```
+
+Postmortems are a production concern. Do not create incident documents for bugs caught during development.

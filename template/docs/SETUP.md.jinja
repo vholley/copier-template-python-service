@@ -1,0 +1,288 @@
+# Setup
+
+How to set up a development machine to work on `{{ project_name }}`. Covers tool installation, authentication, and common issues.
+
+After installing the tools in this document, `scripts/bootstrap.sh` handles the Python and project-specific parts.
+
+## macOS prerequisites
+
+### Homebrew
+
+Homebrew is macOS's package manager. Install from <https://brew.sh/> if not already present:
+
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+```
+
+Verify:
+
+```bash
+brew --version
+```
+
+### Xcode Command Line Tools
+
+Git and several build tools ship with Xcode Command Line Tools. If `git --version` fails:
+
+```bash
+xcode-select --install
+```
+
+## Python toolchain
+
+### uv
+
+uv manages Python versions, virtual environments, and dependencies. Install:
+
+```bash
+brew install uv
+```
+
+Verify:
+
+```bash
+uv --version
+```
+
+uv installs Python interpreters on demand; you do not need to install Python separately. `bootstrap.sh` pins the project's Python version via `.python-version` and uv reads that.
+{% if include_docker %}
+
+## Containers
+
+### Docker Desktop
+
+Docker Desktop bundles the Docker engine, CLI, and a UI for managing containers. Required for `make build` and for running app images locally.
+
+Install:
+
+```bash
+brew install --cask docker
+```
+
+Then launch Docker Desktop from Applications. The daemon must be running before any `docker` command works; you'll see a whale icon in the menu bar when it's up.
+
+Verify:
+
+```bash
+docker --version
+docker ps   # should succeed without errors
+```
+
+If you see "Cannot connect to the Docker daemon", Docker Desktop isn't running. Launch it from Applications.
+
+Recommended Docker Desktop settings (Preferences → Resources):
+
+- 4 GB RAM minimum, 8 GB if you can spare it
+- 2 CPUs minimum
+- Disk image size 60 GB+ (images and build cache add up)
+
+### Docker Hub sign-in
+
+Docker Desktop prompts for a Docker Hub login on first launch. You can skip this for local builds; sign-in is required only for pushing public images to Docker Hub. This project pushes to Google Artifact Registry instead.
+{% endif %}
+{% if use_gcp %}
+
+## GCP
+
+### gcloud CLI
+
+The gcloud CLI talks to Google Cloud Platform. Required for `make deploy` (pushes container images to Artifact Registry, deploys to Cloud Run) and for any direct GCP work.
+
+Install:
+
+```bash
+brew install --cask google-cloud-sdk
+```
+
+After install, restart your shell or run `source ~/.zshrc` (or `~/.bash_profile`).
+
+Verify:
+
+```bash
+gcloud --version
+```
+
+### Authentication
+
+GCP requires two kinds of authentication: your user account (for `gcloud` commands you run directly) and application-default credentials (ADC, used by Google client libraries inside Python code).
+
+```bash
+gcloud auth login                       # user account
+gcloud auth application-default login   # ADC for libraries
+gcloud config set project {{ gcp_project_dev }}
+```
+
+Verify:
+
+```bash
+gcloud auth list                # should show your account with (active)
+gcloud config list              # should show project = {{ gcp_project_dev }}
+gcloud auth application-default print-access-token   # should print a token
+```
+
+ADC expires periodically. If `make deploy` or local Python code fails with auth errors, re-run `gcloud auth application-default login`.
+{% endif %}
+{% if include_terraform %}
+
+## Infrastructure
+
+### Terraform
+
+Terraform manages cloud resources via declarative config files. Required for `make tf-plan` and `make tf-apply`.
+
+```bash
+brew install terraform
+```
+
+Verify:
+
+```bash
+terraform --version
+```
+
+This project requires Terraform 1.10 or newer. If `brew install terraform` gives you an older version, run `brew upgrade terraform`.
+
+### tflint (optional)
+
+A linter for Terraform configurations. Not required, but useful for catching issues before `terraform plan`:
+
+```bash
+brew install tflint
+```
+{% endif %}
+
+## Project tooling
+
+### pre-commit
+
+pre-commit runs linters and formatters on staged files before each commit. `bootstrap.sh` installs it into the project's hooks directory. To make the `pre-commit` command available globally (for running checks manually or working in other repos):
+
+```bash
+brew install pre-commit
+```
+
+### copier (template updates)
+
+Required only when you want to pull the latest template changes into the project via `copier update --trust`:
+
+```bash
+brew install copier
+```
+
+## AI tooling
+
+### Claude Code
+
+Claude Code is the AI coding assistant used in this project. Install the VS Code extension from the Extensions panel (search "Claude Code"), or the CLI:
+
+```bash
+npm install -g @anthropic-ai/claude-code
+```
+
+Verify:
+
+```bash
+claude --version
+```
+
+## First-run verification
+
+After installing everything you need, from the project root:
+
+```bash
+./scripts/bootstrap.sh
+```
+
+bootstrap.sh:
+
+1. Installs/updates uv if missing
+2. Installs Python at the version specified in `.python-version`
+3. Syncs project dependencies via `uv sync`
+4. Installs pre-commit hooks
+{% if use_gcp -%}
+5. Verifies gcloud auth and default project
+{% endif -%}
+6. Warns about any missing optional tools (Docker, gcloud, Terraform)
+
+Then verify the project itself runs:
+
+```bash
+make ci   # lint + typecheck + test
+```
+
+If `make ci` passes, your machine is set up correctly.
+
+## Troubleshooting
+
+### `uv: command not found` after install
+
+Restart your shell, or run `source ~/.zshrc` (or your shell's rc file). If still missing, check that `/opt/homebrew/bin` (Apple Silicon) or `/usr/local/bin` (Intel) is in your `PATH`.
+{% if include_docker %}
+
+### `docker: Cannot connect to the Docker daemon`
+
+Docker Desktop isn't running. Launch it from Applications and wait for the whale icon to appear in the menu bar with "Docker Desktop is running".
+
+### `make build` fails with "no space left on device"
+
+Docker's disk allocation is full. In Docker Desktop: Preferences → Resources, increase disk image size. Then clear unused images:
+
+```bash
+docker system prune -a
+```
+{% endif %}
+
+### `Permission denied (publickey)` from GitHub
+
+Your SSH key isn't registered with GitHub. See the template repo's README "GitHub authentication" section for setup.
+{% if use_gcp %}
+
+### `Reauthentication required` from gcloud
+
+Application Default Credentials expired:
+
+```bash
+gcloud auth application-default login
+```
+
+### `User does not have permission` from gcloud
+
+Your user account isn't granted the role you need in the GCP project. For deploy work, the typical roles are `roles/run.developer`, `roles/artifactregistry.writer`, and `roles/iam.serviceAccountUser`. These can be granted in the GCP console under IAM or via `gcloud projects add-iam-policy-binding`.
+{% endif %}
+{% if include_terraform %}
+
+### `Error acquiring the state lock` from terraform
+
+Another `terraform apply` is running, or a previous run was interrupted and the lock wasn't released. If you're sure no one else is running terraform, force-unlock:
+
+```bash
+terraform force-unlock <LOCK_ID>
+```
+
+The `LOCK_ID` is printed in the error message.
+
+### `Error: Failed to get existing workspaces: querying Cloud Storage failed`
+
+The state bucket doesn't exist yet, or your gcloud credentials don't have access. For a brand-new project, run `./scripts/tf-bootstrap.sh` once to create the state buckets. After that, ensure ADC is set up.
+{% endif %}
+
+### `bootstrap.sh` warns about a missing tool
+
+Warnings about missing optional tools are non-fatal. Each tool is needed only for the part of the project that uses it ({% if include_docker %}Docker for container builds, {% endif %}{% if use_gcp %}gcloud for deploys{% if include_terraform %}, Terraform for infrastructure{% endif %}{% endif %}). Install the relevant tool from the section above, then re-run `./scripts/bootstrap.sh`.
+
+### Pre-commit hook fails on a file you didn't change
+
+The hook auto-formatted the file. Stage the formatted changes and commit again:
+
+```bash
+git add <file>
+git commit
+```
+
+### `make new-app` rejects a name
+
+App names must be `kebab-case` (lowercase letters, digits, hyphens; starts with a letter; no underscores). The script converts the kebab name to `snake_case` for the Python package name internally. Example: `make new-app NAME=invoice-sync` creates `apps/invoice-sync/` with Python package `invoice_sync`.
+
+### Tests fail with `ModuleNotFoundError: No module named '<app>'`
+
+Run `uv sync` to make sure the workspace dependencies are installed. If that doesn't help, the package may not be declared as a workspace member; check that the app's directory is listed in the root `pyproject.toml`'s `[tool.uv.workspace]` block.

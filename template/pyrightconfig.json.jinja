@@ -1,0 +1,16 @@
+{
+    "include": ["libs", "apps"],
+    "exclude": [
+        "**/node_modules",
+        "**/__pycache__",
+        "**/.venv",
+        "**/build",
+        "**/dist",
+        "app-template"
+    ],
+    "venvPath": ".",
+    "venv": ".venv",
+    "pythonVersion": "{{ python_version }}",
+    "typeCheckingMode": "strict",
+    "reportMissingTypeStubs": "none"
+}
