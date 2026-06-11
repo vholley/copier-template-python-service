@@ -76,6 +76,11 @@ class TestExclusions:
         assert not (project / ".github/workflows/terraform-plan.yml").exists()
         assert not (project / ".github/workflows/terraform-apply.yml").exists()
 
+    def test_no_gcp_with_terraform_excludes_terraform_workflows(self, tmp_path: Path) -> None:
+        project = _generate(tmp_path, include_terraform=True)
+        assert not (project / ".github/workflows/terraform-plan.yml").exists()
+        assert not (project / ".github/workflows/terraform-apply.yml").exists()
+
 
 class TestInclusions:
     def test_ci_workflow_always_present(self, tmp_path: Path) -> None:
@@ -106,6 +111,10 @@ class TestInclusions:
         project = _generate(tmp_path, **_GCP_EXTRAS, include_terraform=True)
         assert (project / ".github/workflows/terraform-plan.yml").exists()
         assert (project / ".github/workflows/terraform-apply.yml").exists()
+
+    def test_no_gcp_with_terraform_includes_infra_dir(self, tmp_path: Path) -> None:
+        project = _generate(tmp_path, include_terraform=True)
+        assert (project / "infra/terraform").exists()
 
 
 class TestRendering:

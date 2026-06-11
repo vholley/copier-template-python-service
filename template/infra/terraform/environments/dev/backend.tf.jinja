@@ -1,6 +1,39 @@
+{% if use_gcp %}
 terraform {
   backend "gcs" {
     bucket = "{{ gcp_project_dev }}-tfstate"
     prefix = "{{ project_name }}/dev"
   }
 }
+{%- else %}
+# Configure your remote backend here, e.g.:
+#
+# S3 (AWS):
+# terraform {
+#   backend "s3" {
+#     bucket = "my-terraform-state"
+#     key    = "{{ project_name }}/dev/terraform.tfstate"
+#     region = "us-east-1"
+#   }
+# }
+#
+# Azure Blob:
+# terraform {
+#   backend "azurerm" {
+#     resource_group_name  = "tfstate"
+#     storage_account_name = "tfstate"
+#     container_name       = "tfstate"
+#     key                  = "{{ project_name }}.dev.tfstate"
+#   }
+# }
+#
+# Terraform Cloud:
+# terraform {
+#   backend "remote" {
+#     organization = "my-org"
+#     workspaces {
+#       name = "{{ project_name }}-dev"
+#     }
+#   }
+# }
+{%- endif %}
