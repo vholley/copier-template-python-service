@@ -4,8 +4,8 @@ A copier template for new Python services and jobs. Generates a project with uv-
 
 ## Prerequisites
 
-- macOS with Homebrew
-- copier installed: `uv tool install copier` or `brew install copier`
+- macOS, Linux, or Windows (WSL 2 recommended for shell scripts on Windows)
+- copier installed: `uv tool install copier` (or `brew install copier` on macOS/Linux with Homebrew)
 
 ## GitHub authentication
 
@@ -21,19 +21,31 @@ ssh-keygen -t ed25519 -C "your-email@example.com"
 
 Press Enter to accept the default file location. Set a passphrase or leave empty.
 
-Add the key to the macOS keychain by creating or editing `~/.ssh/config`:
+Add the key to the SSH agent by creating or editing `~/.ssh/config`:
 
-```
+```ssh-config
 Host github.com
   AddKeysToAgent yes
   UseKeychain yes
   IdentityFile ~/.ssh/id_ed25519
 ```
 
+`UseKeychain yes` is macOS-only — omit that line on Linux and Windows.
+
 Copy the public key to your clipboard:
 
 ```bash
+# macOS
 pbcopy < ~/.ssh/id_ed25519.pub
+
+# Linux
+xclip -selection clipboard < ~/.ssh/id_ed25519.pub
+# or: cat ~/.ssh/id_ed25519.pub  (then copy manually)
+```
+
+```powershell
+# Windows (PowerShell)
+Get-Content "$env:USERPROFILE\.ssh\id_ed25519.pub" | Set-Clipboard
 ```
 
 In GitHub: **Settings → SSH and GPG keys → New SSH key**. Paste, save.
@@ -51,7 +63,10 @@ GitHub responds with `Hi <username>! You've successfully authenticated, but GitH
 To use HTTPS instead, install the GitHub CLI and let it manage credentials:
 
 ```bash
+# macOS / Linux with Homebrew
 brew install gh
+
+# or: https://cli.github.com/manual/installation
 gh auth login
 ```
 

@@ -14,16 +14,15 @@ warn() { printf "${YELLOW}!! ${NC} %s\n" "$1"; }
 fail() { printf "${RED}xx${NC} %s\n" "$1" >&2; exit 1; }
 
 # ---------------------------------------------------------------------------
-# macOS + Homebrew
+# OS detection
 # ---------------------------------------------------------------------------
 
-if [[ "$(uname)" != "Darwin" ]]; then
-    warn "Not running on macOS. This script targets macOS; results may vary."
-fi
-
-if ! command -v brew >/dev/null 2>&1; then
-    fail "Homebrew not found. Install from https://brew.sh and re-run. See docs/SETUP.md for full setup."
-fi
+OS="$(uname -s)"
+case "$OS" in
+    Darwin) info "Platform: macOS" ;;
+    Linux)  info "Platform: Linux" ;;
+    *)      warn "Unrecognised platform: $OS — results may vary." ;;
+esac
 
 # ---------------------------------------------------------------------------
 # uv (install if missing)
@@ -96,9 +95,8 @@ fi
 
 if ! command -v gcloud >/dev/null 2>&1; then
     warn "gcloud CLI not found. Manual installation required — bootstrap cannot install it automatically."
-    warn "  1. brew install --cask google-cloud-sdk"
-    warn "  2. gcloud init"
-    warn "  3. gcloud auth application-default login"
+    warn "  Install from: https://cloud.google.com/sdk/docs/install"
+    warn "  Then run: gcloud init && gcloud auth application-default login"
     warn "See docs/SETUP.md (GCP section) for full setup steps. Re-run scripts/bootstrap.sh when done."
 else
     info "gcloud: $(gcloud --version | head -1)"
@@ -127,8 +125,8 @@ fi
 
 if ! command -v docker >/dev/null 2>&1; then
     warn "Docker not found. Manual installation required — Docker Desktop needs user interaction to complete setup."
-    warn "  1. brew install --cask docker"
-    warn "  2. Open Docker Desktop and accept the license agreement"
+    warn "  macOS / Windows: https://www.docker.com/products/docker-desktop/"
+    warn "  Linux: curl -fsSL https://get.docker.com | sh"
     warn "See docs/SETUP.md (Containers section) for full setup steps. Re-run scripts/bootstrap.sh when done."
 else
     info "docker: $(docker --version)"
@@ -141,10 +139,18 @@ fi
 # ---------------------------------------------------------------------------
 
 if ! command -v terraform >/dev/null 2>&1; then
-    info "Installing Terraform..."
-    brew install terraform
+    if command -v brew >/dev/null 2>&1; then
+        info "Installing Terraform via Homebrew..."
+        brew install terraform
+    else
+        warn "Terraform not found. Install manually and re-run bootstrap.sh:"
+        warn "  Linux (Debian/Ubuntu): https://developer.hashicorp.com/terraform/install#linux"
+        warn "  Other: https://releases.hashicorp.com/terraform/"
+    fi
 fi
-info "terraform: $(terraform version | head -1)"
+if command -v terraform >/dev/null 2>&1; then
+    info "terraform: $(terraform version | head -1)"
+fi
 {%- endif %}
 
 echo
