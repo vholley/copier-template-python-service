@@ -1,5 +1,7 @@
 """Invariant checks that Ruff and import-linter cannot express.
 
+A rule runs only when the project lists it in working/architecture/constraints.md
+(D40); the template ships the mechanism and an example, not active rules.
 Each rule has an ID, an anchor into working/architecture/constraints.md, and a
 remediation message written to the model-facing standard. Output is one
 `path:line: RULE-ID message` per violation. Grandfathered violations are listed
@@ -101,12 +103,21 @@ def _exempt(repo: Path, f: Path, rule_id: str) -> bool:
     return _module_name(repo, f) in allowed
 
 
+def active_rules(repo: Path) -> list[type[Rule]]:
+    """Rules the project has listed in constraints.md (D40); unlisted rules do not run."""
+    listed = {c.check for c in paths.read_constraints(repo) if c.tool == "constraints.py"}
+    return [r for rid, r in RULES.items() if rid in listed]
+
+
 def scan(repo: Path) -> list[tuple[str, int, str, str]]:
     """(path, line, rule id, message) for every violation in source files."""
     hits: list[tuple[str, int, str, str]] = []
+    rules = active_rules(repo)
+    if not rules:
+        return hits
     for f in paths.source_files(repo):
         tree = ast.parse(f.read_text(), filename=str(f))
-        for rule_cls in RULES.values():
+        for rule_cls in rules:
             if _exempt(repo, f, rule_cls.id):
                 continue
             rule = rule_cls(paths.rel(repo, f))

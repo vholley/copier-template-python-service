@@ -16,8 +16,14 @@ Cross-cutting concerns (logging, telemetry) enter through a single provider modu
 
 ## Invariants
 
-- INV-01 (check: constraints.py INV-01) [allow: shared.config, shared.logging_setup]: the environment is read only in the listed modules (and any module named `config.py`).
-- INV-02 (check: ruff T20): no print() in library code; log through `shared.logging_setup`.
+The project decides its invariants; none are active by default. A rule runs only
+when listed here. Available in `scripts/delivery/constraints.py`:
+
+<!-- INV-01: the environment is read only in the listed modules (plus any config.py).
+     Enable by uncommenting and editing the allow list:
+- INV-01 (check: constraints.py INV-01) [allow: shared.config, shared.logging_setup]: the environment is read only in the listed modules.
+-->
+
 - PKG-01 (check: importlinter PKG-01): libs do not import apps.
 
 ## Protected paths

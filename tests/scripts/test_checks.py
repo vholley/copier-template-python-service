@@ -116,6 +116,11 @@ class TestConstraints:
         (project / "libs/core/src/core/config.py").write_text("import os\nDB = os.getenv('DB_URL')\n")
         assert constraints.main([str(project)]) == 0
 
+    def test_unlisted_rule_does_not_run(self, project: Path) -> None:
+        (project / "working/architecture/constraints.md").write_text("# Constraints\n")
+        (project / "libs/core/src/core/x.py").write_text("import os\nY = os.getenv('X')\n")
+        assert constraints.main([str(project)]) == 0
+
     def test_every_registered_rule_has_id_anchor_and_message(self) -> None:
         for rule_id, rule in constraints.RULES.items():
             assert rule.id == rule_id
