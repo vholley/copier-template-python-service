@@ -1,63 +1,76 @@
 flowchart TD
-    START["make start / /start<br/>(contextual: asks only what applies)"]
-    START -->|"quick change"| QC["edit on any branch<br/>no work item"]
-    START -->|"add or change behavior"| INT
-    START -->|"fix a bug"| INTD
-    START -->|"explore first"| SPIKE["spike item<br/>guards off, never merges"]
-    SPIKE -->|"make start: turn into..."| INT
+    subgraph MACHINE["ON THE ENGINEER'S MACHINE — Claude Code session and shell.<br/>Purpose: define the work before code, then build it green.<br/>Everything here helps; nothing here is the final gate."]
+        START["make start / /start<br/>asks only what applies to this branch"]
+        START -->|"quick change"| QC["edit on any branch<br/>no work item, no artifacts"]
+        START -->|"add or change behavior"| INT
+        START -->|"fix a bug"| INTD
+        START -->|"explore first"| SPIKE["spike item<br/>guards off, never merges"]
+        SPIKE -->|"make start: turn into a change or bug fix"| INT
 
-    subgraph CHANGE["Change workflow (three signed acceptances)"]
-        INT["/intent → intent.md"] --> ACC1{{"make accept STAGE=intent<br/>(engineer signs)"}}
-        ACC1 --> CLR["/clarify<br/>contradictions first,<br/>bounded questions,<br/>assumptions logged"]
-        CLR --> DEC["decisions.md<br/>alternative + ramification<br/>(no silent decisions)"]
-        DEC --> SPEC["/spec → spec.md + criteria.json<br/>default-fail, required classes"]
-        SPEC --> SR["spec-reviewer subagent<br/>(closed questions)"]
-        SR --> ACC2{{"make accept STAGE=spec<br/>+ Accept-Decision trailers"}}
-        ACC2 --> PLAN["/plan → interfaces + steps"]
-        PLAN --> RED["/red → one failing test per criterion"]
-        RED --> ACC3{{"make accept STAGE=red"}}
-        ACC3 --> IMPL["/implement (green)<br/>one step, make green, commit"]
+        subgraph FRONT["Front stage (in .work/&lt;id&gt;/ on the branch)"]
+            INT["/intent → intent.md<br/>what, why, constraints, non-goals, done"]
+            INT --> ACC1{{"ENGINEER SIGNS<br/>make accept STAGE=intent"}}
+            ACC1 --> CLR["/clarify<br/>contradictions first, bounded questions,<br/>assumptions logged with risk"]
+            CLR --> DEC["decisions.md<br/>every decision: alternative + ramification"]
+            DEC --> SPEC["/spec → spec.md + criteria.json<br/>criteria start failed, required classes present"]
+            SPEC --> ACC2{{"ENGINEER SIGNS<br/>make accept STAGE=spec<br/>(also accepts batched decisions)"}}
+            ACC2 --> PLAN["/plan → interfaces + steps"]
+            PLAN --> RED["/red → one failing test per criterion"]
+            RED --> ACC3{{"ENGINEER SIGNS<br/>make accept STAGE=red"}}
+        end
+
+        subgraph DEFECTFRONT["Defect front stage"]
+            INTD["/intent → intent.md"] --> ACCD1{{"ENGINEER SIGNS<br/>make accept STAGE=intent"}}
+            ACCD1 --> DIAG["/diagnose → diagnosis.md<br/>reproduce · evidence · cause with provenance<br/>source edits blocked until cause confirmed"]
+            DIAG --> ACCD2{{"ENGINEER SIGNS<br/>make accept STAGE=diagnosis"}}
+            ACCD2 --> PLAND["/plan"]
+        end
+
+        subgraph BUILD["Build (session hooks enforce)"]
+            IMPL["/implement<br/>one plan step → make green → commit"]
+            STOP{"stop hook<br/>green? evidence for criteria?"}
+            IMPL --> STOP
+            STOP -->|"no, fewer than 3 blocks"| IMPL
+            STOP -->|"3 blocks"| ESC["escalated<br/>make status lists: implement · spec · abandon"]
+            ESC --> IMPL
+            STOP -->|"yes"| EVAL["evaluator subagent<br/>fresh context, read-only,<br/>confirms each criterion from its evidence"]
+        end
+        ACC3 --> IMPL
+        PLAND --> IMPL
+
+        SIDE["anywhere on the machine:<br/>make status · make help · /amend (side loop, one criterion) · make abandon"]
     end
 
-    subgraph DEFECT["Defect variant"]
-        INTD["/intent → intent.md"] --> ACCD1{{"make accept STAGE=intent"}}
-        ACCD1 --> DIAG["/diagnose → diagnosis.md<br/>reproduce · evidence · cause with provenance<br/>source edits blocked until confirmed"]
-        DIAG --> ACCD2{{"make accept STAGE=diagnosis"}}
-        ACCD2 --> PLAND["/plan"] --> IMPL
+    EVAL -->|"all confirmed → open PR"| PRDESC
+    QC -->|"open PR"| PRDESC
+    PRDESC["PR description<br/>intent + risk, diff mapped to criteria,<br/>decisions, evidence links"]
+
+    subgraph GITHUB["ON GITHUB — pull request checks and branch rules.<br/>Purpose: the only gate that cannot be switched off.<br/>Checks artifacts in the PR, not the tool that made them."]
+        TIER["classify the change from the diff<br/>trivial if: only doc/config/test paths, or code AST-identical,<br/>or string-only and not quoted by the spec"]
+        BOUNCE["bounced<br/>behavior change with no work item;<br/>message names make start + make adopt-branch"]
+        CONTRACT["pr-contract check<br/>acceptance commits signed by an org member's key ·<br/>accepted files unchanged since signing ·<br/>intent accepted before any code, spec/diagnosis before implementation ·<br/>every criterion confirmed with evidence ·<br/>every decision has a ramification and an acceptance ·<br/>promotions and living-spec edits present · diff within budget ·<br/>no LLM co-author trailers · state.json agrees with rebuild"]
+        CHECKS["mechanical checks<br/>ruff · pyright strict · tests · test ratchet ·<br/>import-linter + constraints · budgets ·<br/>spec coverage · diff coverage ·<br/>red-before-green ordering (defects: fix at diagnosed location)"]
+        REVIEWERS["two read-only reviewer subagents<br/>necessity: which criterion requires each hunk?<br/>spec: does the delivered behavior match the intent?"]
+        HUMAN{{"HUMAN REVIEWER<br/>1 did the spec solve the intent?<br/>2 were the accepted decisions sound?<br/>3 anything the spec did not require?<br/>records Intent-match: yes / partial / no"}}
+        RULES["branch rules on develop<br/>PR required · all checks green ·<br/>code-owner review on protected paths ·<br/>1 approval (2 for high-risk) · no direct pushes"]
     end
-
-    IMPL --> STOP{"stop hook:<br/>make green passed?<br/>criteria have evidence?"}
-    STOP -->|"no, retry < 3"| IMPL
-    STOP -->|"no, retry = 3"| ESC["escalated<br/>(make status shows exits:<br/>implement · spec · abandon)"]
-    ESC --> IMPL
-    STOP -->|"yes"| EVAL["evaluator subagent<br/>fresh context, read-only,<br/>grades evidence per criterion"]
-    EVAL -->|"all confirmed"| PR["open PR<br/>description = map of diff to criteria<br/>+ decisions + evidence"]
-
-    QC --> PR
-
-    subgraph CI["Tier 2: CI on the PR (the trust boundary)"]
-        TIER["compute tier<br/>(paths · AST-equal · string-only)"]
-        CONTRACT["pr-contract<br/>signatures · hashes · ordering<br/>criteria · decisions · promotions · budgets"]
-        CHECKS["lint · pyright · tests · ratchet<br/>constraints · diff coverage"]
-        REVIEWERS["necessity-reviewer<br/>spec-reviewer (read-only)"]
-    end
-    PR --> TIER
+    PRDESC --> TIER
     TIER -->|"trivial"| CHECKS
-    TIER -->|"standard, no item"| BOUNCE["bounced: message names<br/>make start + make adopt-branch"]
-    BOUNCE --> INT
-    TIER -->|"standard / high-risk"| CONTRACT --> CHECKS --> REVIEWERS
-    REVIEWERS --> HUMAN["human reviewer:<br/>1 did the spec solve the intent?<br/>2 were the decisions sound?<br/>3 anything the spec did not require?<br/>Intent-match: yes/partial/no"]
-    CHECKS -->|"trivial"| HUMAN
-    HUMAN -->|"approve (2 for high-risk)"| MERGE["merge to develop"]
-    MERGE --> POST["post-merge: archive .work/&lt;id&gt; → working/history/<br/>promotions already in the diff"]
+    TIER -->|"behavior change, no work item"| BOUNCE
+    BOUNCE -.->|"engineer creates the item, writes the chain"| INT
+    TIER -->|"change or defect with a work item"| CONTRACT --> CHECKS --> REVIEWERS --> HUMAN
+    CHECKS -->|"trivial: straight to review"| HUMAN
+    HUMAN --> RULES
 
-    AMEND["/amend (side loop, any stage)<br/>one criterion at a time,<br/>re-accept only the affected part"] -.-> IMPL
-    ABANDON["make abandon (any stage)<br/>archives with stage abandoned"] -.-> POST
-    STATUS["make status (anywhere)<br/>branch · kind · stage · accepted · blocking · next command"]
+    subgraph AFTER["AFTER MERGE — GitHub Actions on develop.<br/>Purpose: keep the repository's memory clean."]
+        POST["post-merge job<br/>move .work/&lt;id&gt; → working/history/&lt;id&gt;<br/>delete progress.md<br/>(promotions were already in the diff)"]
+        AUDIT["weekly entropy audit<br/>closed questions only; drafts, never commits"]
+    end
+    RULES -->|"merge"| POST
 
     classDef human fill:#fff3cd,stroke:#b58900,color:#000
     classDef gate fill:#e7f0ff,stroke:#1f5fbf,color:#000
     classDef agent fill:#eef7ee,stroke:#2e7d32,color:#000
     class ACC1,ACC2,ACC3,ACCD1,ACCD2,HUMAN human
-    class TIER,CONTRACT,CHECKS,STOP gate
-    class CLR,SPEC,SR,PLAN,RED,IMPL,DIAG,EVAL,REVIEWERS,PLAND agent
+    class TIER,CONTRACT,CHECKS,RULES,STOP gate
+    class CLR,SPEC,PLAN,RED,IMPL,DIAG,EVAL,REVIEWERS,PLAND,AUDIT agent
