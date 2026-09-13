@@ -244,3 +244,20 @@ class TestDeploySurface:
         monkeypatch.setattr(deploy_surface, "image_files", lambda _name: ["app/main.py", "app/.claude/settings.json"])
         assert deploy_surface.main(["--image", "svc:test", str(project)]) == 1
         assert "DEPLOY-03" in capsys.readouterr().out
+
+
+class TestConstraintsCliExemption:
+    """D21: only modules declared in [project.scripts] may print."""
+
+    def test_declared_cli_module_is_exempt(self, project: Path) -> None:
+        (project / "libs/core/pyproject.toml").write_text(
+            '[project]\nname = "core"\n[project.scripts]\ncore = "core.cli:main"\n'
+        )
+        (project / "libs/core/src/core/cli.py").write_text("def main():\n    print('hello')\n")
+        assert constraints.main([str(project)]) == 0
+
+    def test_undeclared_main_py_is_not_exempt(self, project: Path, capsys: pytest.CaptureFixture[str]) -> None:
+        (project / "libs/core/pyproject.toml").write_text('[project]\nname = "core"\n')
+        (project / "libs/core/src/core/main.py").write_text("print('app')\n")
+        assert constraints.main([str(project)]) == 1
+        assert "main.py:1: INV-01" in capsys.readouterr().out
