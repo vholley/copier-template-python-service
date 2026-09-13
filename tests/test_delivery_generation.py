@@ -232,3 +232,94 @@ class TestDeployable:
         (delivery_copy / "apps/x").mkdir(parents=True)
         (delivery_copy / "apps/x/Dockerfile").write_text("FROM python\nCOPY . .\n")
         assert subprocess.run(["python3", "-m", "delivery.deploy_surface", "."], cwd=delivery_copy, env=env).returncode == 1
+
+
+# ---------------------------------------------------------------- S9 (C06, C14, C15, C36)
+
+import os as _os
+
+
+class TestWorkingLayout:
+    """C06: working/ tracked with every listed file; docs/ ignored with the supplementary files."""
+
+    def test_working_files(self, delivery_project: Path) -> None:
+        for rel in ("working/README.md", "working/commands.toml", "working/architecture/overview.md",
+                    "working/architecture/constraints.md", "working/architecture/constraints-baseline.txt",
+                    "working/architecture/decisions/README.md", "working/spec/README.md",
+                    "working/standards/model-facing.md", "working/standards/human-facing.md",
+                    "working/standards/criteria-templates.md", "working/standards/budgets.md",
+                    "working/observations.md", "working/history/.gitkeep"):
+            assert (delivery_project / rel).exists(), rel
+
+    def test_docs_files(self, delivery_project: Path) -> None:
+        for rel in ("docs/DELIVERY-SYSTEM.md", "docs/workflow.mermaid", "docs/DEVELOPING.md", "docs/RATIONALE.md",
+                    "docs/CONVENTIONS.md", "docs/SETUP.md"):
+            assert (delivery_project / rel).exists(), rel
+
+    def test_readme_carries_commands_and_diagram_link(self, delivery_project: Path) -> None:
+        text = (delivery_project / "working/README.md").read_text()
+        assert "make start" in text and "make status" in text and "make help" in text
+        assert "docs/workflow.mermaid" in text
+        assert "make opt-out" in text
+        for anchor in ("#start", "#stages", "#signing", "#green", "#contract", "#bounced", "#protected", "#review", "#escalated"):
+            assert f'name="{anchor[1:]}"' in text or f"## " in text, anchor
+
+    def test_readme_within_budget(self, delivery_project: Path) -> None:
+        n = len((delivery_project / "working/README.md").read_text().splitlines())
+        assert n <= 200, n
+
+
+class TestAgentsMd:
+    """C14: AGENTS.md under 150 lines, managed marker, no Ruff duplication, CLAUDE.md pointer."""
+
+    def test_agents_md_shape(self, delivery_project: Path) -> None:
+        text = (delivery_project / "AGENTS.md").read_text()
+        assert len(text.splitlines()) < 150
+        assert "<!-- managed-by-template" in text and "<!-- project-specific below" in text
+        assert (delivery_project / "CLAUDE.md").read_text().strip() == "@AGENTS.md"
+
+    def test_agents_md_passes_budget_check(self, delivery_copy: Path) -> None:
+        env = {**_os.environ, "PYTHONPATH": "scripts"}
+        r = subprocess.run(["python3", "-m", "delivery.budgets", "--agents-md", "."], cwd=delivery_copy, env=env, capture_output=True, text=True)
+        assert r.returncode == 0, r.stdout + r.stderr
+
+    def test_agents_md_states_the_core_rules(self, delivery_project: Path) -> None:
+        text = (delivery_project / "AGENTS.md").read_text()
+        for needle in ("/start", "make green", "one decision", "verbatim", "opt out", "working/README.md"):
+            assert needle.lower() in text.lower(), needle
+
+
+class TestMigration:
+    """C15: MIGRATION.md and the migration script on a project from the base template."""
+
+    def test_migration_doc_exists(self, delivery_project: Path) -> None:
+        text = (delivery_project / "MIGRATION.md").read_text()
+        assert "working/" in text and "migrate-to-delivery" in text
+
+    def test_migration_script_creates_working_and_reports_modified(self, plain_project: Path, tmp_path: Path, delivery_project: Path) -> None:
+        import shutil
+
+        old = tmp_path / "old"
+        shutil.copytree(plain_project, old, symlinks=True)
+        subprocess.run(["git", "init", "-q"], cwd=old, check=True)
+        (old / "Makefile").write_text((old / "Makefile").read_text() + "\ncustom:\n\techo hi\n")
+        script = delivery_project / "scripts/migrate-to-delivery.sh"
+        r = subprocess.run(["bash", str(script), "--from", str(delivery_project)], cwd=old, capture_output=True, text=True)
+        assert r.returncode == 0, r.stderr
+        assert (old / "working/standards/budgets.md").exists()
+        assert "Makefile" in r.stdout and "modified" in r.stdout
+
+
+class TestHumanFacingDocs:
+    """C36: README and RATIONALE describe the scaffold; no tells."""
+
+    def test_docs_mention_the_system(self, delivery_project: Path) -> None:
+        assert "delivery" in (delivery_project / "README.md").read_text().lower()
+        assert "working/" in (delivery_project / "docs/RATIONALE.md").read_text()
+        assert "## The Makefile" in (delivery_project / "docs/DEVELOPING.md").read_text()
+
+    def test_writing_check_passes(self, delivery_copy: Path) -> None:
+        env = {**_os.environ, "PYTHONPATH": "scripts"}
+        r = subprocess.run(["python3", "-m", "delivery.writing_check", "README.md", "docs/RATIONALE.md", "docs/DELIVERY-SYSTEM.md", "working/README.md", "AGENTS.md"],
+                           cwd=delivery_copy, env=env, capture_output=True, text=True)
+        assert r.returncode == 0, r.stdout + r.stderr
