@@ -44,7 +44,7 @@ def project(repo: Path) -> Path:
     (repo / "working/standards/budgets.md").write_text("stop_hook.retry_cap: 3\nreview.question_max_lines: 2\n")
     (repo / "working/architecture").mkdir()
     (repo / "working/architecture/constraints.md").write_text(
-        "# Constraints\n## Protected paths\n- working/architecture/**\n- working/standards/**\n- .claude/**\n- scripts/**\n- libs/*/tests/**\n"
+        "# Constraints\n## Protected paths\n- working/architecture/**\n- working/standards/**\n- .claude/**\n- scripts/**\n"
     )
     (repo / "libs/core/src/core").mkdir(parents=True)
     (repo / "libs/core/tests").mkdir()

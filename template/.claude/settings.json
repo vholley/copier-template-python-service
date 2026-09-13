@@ -1,0 +1,25 @@
+{
+  "includeCoAuthoredBy": false,
+  "hooks": {
+    "SessionStart": [
+      { "matcher": "startup|resume", "hooks": [ { "type": "command", "command": "scripts/hooks/session-start.sh" } ] }
+    ],
+    "UserPromptSubmit": [
+      { "hooks": [ { "type": "command", "command": "scripts/hooks/prompt.sh" } ] }
+    ],
+    "PreToolUse": [
+      { "matcher": "Edit|Write", "hooks": [ { "type": "command", "command": "scripts/hooks/edit.sh" } ] },
+      { "matcher": "Bash", "hooks": [ { "type": "command", "command": "scripts/hooks/bash.sh" } ] },
+      { "matcher": "AskUserQuestion", "hooks": [ { "type": "command", "command": "scripts/hooks/ask.sh" } ] }
+    ],
+    "PostToolUse": [
+      { "matcher": "Edit|Write", "hooks": [ { "type": "command", "command": "scripts/hooks/post-edit.sh" } ] }
+    ],
+    "Stop": [
+      { "hooks": [ { "type": "command", "command": "scripts/hooks/stop.sh" } ] }
+    ],
+    "SubagentStop": [
+      { "hooks": [ { "type": "command", "command": "scripts/hooks/subagent-stop.sh" } ] }
+    ]
+  }
+}
