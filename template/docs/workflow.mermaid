@@ -5,6 +5,8 @@ flowchart TD
         START -->|"Something the software will do differently?<br/>(new or changed behavior)"| INT
         START -->|"Something broken that should work?<br/>(a bug)"| INTD
         START -->|"Not sure yet, need to look first?"| SPIKE["exploration branch<br/>no checks, can never be merged"]
+        START -->|"Don't want this process for this work?"| OPTOUT{{"ENGINEER SIGNS<br/>make opt-out, then make accept STAGE=opt-out<br/>process off for this branch;<br/>repository checks and one approval remain"}}
+        OPTOUT --> QC
         SPIKE -->|"Found what to build or fix?<br/>make start again"| INT
 
         subgraph FRONT["DEFINING THE WORK BEFORE ANY CODE<br/>The engineer writes what is wanted, the agent finds the gaps,<br/>and the definition of done is agreed and signed.<br/>Files live in .work/&lt;id&gt;/ on the branch."]
@@ -71,6 +73,6 @@ flowchart TD
     classDef human fill:#fff3cd,stroke:#b58900,color:#000
     classDef gate fill:#e7f0ff,stroke:#1f5fbf,color:#000
     classDef agent fill:#eef7ee,stroke:#2e7d32,color:#000
-    class ACC1,ACC2,ACC3,ACCD1,ACCD2,HUMAN human
+    class ACC1,ACC2,ACC3,ACCD1,ACCD2,HUMAN,OPTOUT human
     class TIER,CONTRACT,CHECKS,RULES,STOP gate
     class CLR,SPEC,PLAN,RED,IMPL,DIAG,EVAL,REVIEWERS,PLAND,AUDIT agent
