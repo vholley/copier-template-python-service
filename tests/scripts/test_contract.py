@@ -87,8 +87,11 @@ tier: standard; verified by C1.
 """
 
 
-def build_standard_item(repo: Path, *, item: str = "PROJ-1") -> dict[str, str]:
-    """A complete, correct Standard change on branch PROJ-1. Returns acceptance shas."""
+def build_standard_item(repo: Path, *, item: str = "PROJ-1", code_first: bool = False) -> dict[str, str]:
+    """A complete, correct Standard change on branch <item>. Returns acceptance shas.
+
+    code_first=True commits the implementation before the red tests (an ordering violation).
+    """
     git(repo, "checkout", "-q", "-b", item)
     state.create(repo, item, "change", item)
     d = repo / ".work" / item
@@ -115,18 +118,25 @@ def build_standard_item(repo: Path, *, item: str = "PROJ-1") -> dict[str, str]:
     }, indent=2))
     hs = state.file_hash(d / "spec.md"); hc = state.file_hash(d / "criteria.json"); hd = state.file_hash(d / "decisions.md")
     shas["spec"] = commit(repo, f"accept(work-{item}): spec\n\nAccepts spec.\n\nAccept: spec sha256={hs} sha256={hc}\nAccept-Decision: D1 sha256={hd}\nWork-Item: {item}\n")
+
+    impl = (
+        "def add(a: int, b: int) -> int:\n    return a + b\n\n\n"
+        "def mul(a: int, b: int) -> int:\n    if not isinstance(a, int) or not isinstance(b, int):\n"
+        "        raise TypeError('ints only')\n    return a * b\n"
+    )
+    if code_first:
+        (repo / "libs/core/src/core/calc.py").write_text(impl)
+        commit(repo, f"feat({item}): mul before tests", sign=False)
     (repo / "libs/core/tests/test_mul.py").write_text(
         "import pytest\nfrom core.calc import mul\n\n"
         '@pytest.mark.spec("core.md#mul")\ndef test_mul():\n    assert mul(2, 3) == 6\n\n'
         '@pytest.mark.spec("core.md#mul")\ndef test_mul_rejects():\n    with pytest.raises(TypeError):\n        mul("a", 1)\n'
     )
-    commit(repo, "test(PROJ-1): red C1 C2", sign=False)
+    commit(repo, f"test({item}): red C1 C2", sign=False)
     ht = state.file_hash(repo / "libs/core/tests/test_mul.py")
     shas["red"] = commit(repo, f"accept(work-{item}): red\n\nAccepts red tests.\n\nAccept: red sha256={ht}\nWork-Item: {item}\n")
-    (repo / "libs/core/src/core/calc.py").write_text(
-        "def add(a: int, b: int) -> int:\n    return a + b\n\n\n"
-        "def mul(a: int, b: int) -> int:\n    if not isinstance(a, int) or not isinstance(b, int):\n        raise TypeError('ints only')\n    return a * b\n"
-    )
+    if not code_first:
+        (repo / "libs/core/src/core/calc.py").write_text(impl)
     (repo / "working/spec/core.md").write_text("# Core\n\n## Add\nadd returns the sum.\n\n## Mul\nmul returns the product; non-ints raise TypeError.\n")
     data = json.loads((d / "criteria.json").read_text())
     for c in data["criteria"]:
@@ -134,7 +144,7 @@ def build_standard_item(repo: Path, *, item: str = "PROJ-1") -> dict[str, str]:
     (d / "criteria.json").write_text(json.dumps(data, indent=2))
     for nxt in ["clarify", "spec", "plan", "red", "implement", "verify", "review"]:
         state.advance(repo, item, nxt, force=True)
-    commit(repo, "feat(PROJ-1): mul", sign=False)
+    commit(repo, f"feat({item}): mul", sign=False)
     (repo / "pr.md").write_text(PR_DESC)
     return shas
 
@@ -221,13 +231,8 @@ class TestContractFails:
         assert "CONTRACT-03" in self._out(capsys) and "/amend" in self._out(capsys)
 
     def test_ordering_violation(self, signed_repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
-        git(signed_repo, "checkout", "-q", "-b", "PROJ-2")
-        (signed_repo / "libs/core/src/core/calc.py").write_text("def add(a, b):\n    return a + b\n\ndef mul(a, b):\n    return a * b\n")
-        commit(signed_repo, "feat: code first", sign=False)
-        git(signed_repo, "checkout", "-q", "base")
-        build_standard_item(signed_repo, item="PROJ-3")
-        git(signed_repo, "cherry-pick", "-q", "PROJ-2")
-        assert run_contract(signed_repo, item="PROJ-3") == 1
+        build_standard_item(signed_repo, code_first=True)
+        assert run_contract(signed_repo) == 1
         assert "CONTRACT-04" in self._out(capsys)
 
     def test_empty_ramification(self, signed_repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -299,13 +304,8 @@ class TestContractFails:
         assert "CONTRACT-13" in self._out(capsys)
 
     def test_retroactive_label_waives_ordering(self, signed_repo: Path) -> None:
-        git(signed_repo, "checkout", "-q", "-b", "PROJ-2")
-        (signed_repo / "libs/core/src/core/calc.py").write_text("def add(a, b):\n    return a + b\n\ndef mul(a, b):\n    return a * b\n")
-        commit(signed_repo, "feat: code first", sign=False)
-        git(signed_repo, "checkout", "-q", "base")
-        build_standard_item(signed_repo, item="PROJ-3")
-        git(signed_repo, "cherry-pick", "-q", "PROJ-2")
-        assert run_contract(signed_repo, item="PROJ-3", labels="retroactive-chain") == 0
+        build_standard_item(signed_repo, code_first=True)
+        assert run_contract(signed_repo, labels="retroactive-chain") == 0
 
 
 # ------------------------------------------------------------- compute_tier (C26)
