@@ -31,7 +31,7 @@ coverage.diff.min: 0.90
 
 CONSTRAINTS = """# Constraints
 ## Invariants
-- INV-01 (check: constraints.py INV-01): no print() in library code
+- INV-01 (check: constraints.py INV-01): environment is read only in the config module
 - INV-02 (check: ruff T20): no print() in library code
 - LAYER-01 (check: importlinter LAYER-01): layers depend forward only
 ## Protected paths
@@ -72,32 +72,36 @@ def project(tmp_path: Path) -> Path:
 
 class TestConstraints:
     def test_output_format_and_exit(self, project: Path, capsys: pytest.CaptureFixture[str]) -> None:
-        (project / "libs/core/src/core/x.py").write_text("def f():\n    print('hi')\n")
+        (project / "libs/core/src/core/x.py").write_text("import os\n\ndef f():\n    return os.getenv('DB_URL')\n")
         code = constraints.main([str(project)])
         out = capsys.readouterr().out.splitlines()
         assert code == 1
-        assert out == ["libs/core/src/core/x.py:2: INV-01 print() in library code; use the logger from core.logging_setup. Example: libs/shared/src/shared/logging_setup.py:1"]
+        assert out == ["libs/core/src/core/x.py:4: INV-01 environment read outside the config module; read settings from shared.config. Example: libs/shared/src/shared/config.py:1"]
 
     def test_clean_tree_passes(self, project: Path) -> None:
         (project / "libs/core/src/core/x.py").write_text("def f() -> int:\n    return 1\n")
         assert constraints.main([str(project)]) == 0
 
     def test_grandfathered_passes_new_fails(self, project: Path, capsys: pytest.CaptureFixture[str]) -> None:
-        (project / "libs/core/src/core/old.py").write_text("print('legacy')\n")
+        (project / "libs/core/src/core/old.py").write_text("import os\nX = os.environ['LEGACY']\n")
         (project / "working/architecture/constraints-baseline.txt").write_text(
             "libs/core/src/core/old.py:INV-01\n"
         )
         assert constraints.main([str(project)]) == 0
-        (project / "libs/core/src/core/new.py").write_text("print('new')\n")
+        (project / "libs/core/src/core/new.py").write_text("import os\nY = os.environ.get('NEW')\n")
         assert constraints.main([str(project)]) == 1
         out = capsys.readouterr().out
         assert "new.py" in out and "old.py" not in out
 
     def test_baseline_regeneration(self, project: Path) -> None:
-        (project / "libs/core/src/core/old.py").write_text("print('legacy')\n")
+        (project / "libs/core/src/core/old.py").write_text("import os\nX = os.environ['LEGACY']\n")
         assert constraints.main(["--write-baseline", str(project)]) == 0
         baseline = (project / "working/architecture/constraints-baseline.txt").read_text()
         assert "libs/core/src/core/old.py:INV-01" in baseline
+
+    def test_config_module_may_read_environment(self, project: Path) -> None:
+        (project / "libs/core/src/core/config.py").write_text("import os\nDB = os.getenv('DB_URL')\n")
+        assert constraints.main([str(project)]) == 0
 
     def test_every_registered_rule_has_id_anchor_and_message(self) -> None:
         for rule_id, rule in constraints.RULES.items():
@@ -245,19 +249,3 @@ class TestDeploySurface:
         assert deploy_surface.main(["--image", "svc:test", str(project)]) == 1
         assert "DEPLOY-03" in capsys.readouterr().out
 
-
-class TestConstraintsCliExemption:
-    """D21: only modules declared in [project.scripts] may print."""
-
-    def test_declared_cli_module_is_exempt(self, project: Path) -> None:
-        (project / "libs/core/pyproject.toml").write_text(
-            '[project]\nname = "core"\n[project.scripts]\ncore = "core.cli:main"\n'
-        )
-        (project / "libs/core/src/core/cli.py").write_text("def main():\n    print('hello')\n")
-        assert constraints.main([str(project)]) == 0
-
-    def test_undeclared_main_py_is_not_exempt(self, project: Path, capsys: pytest.CaptureFixture[str]) -> None:
-        (project / "libs/core/pyproject.toml").write_text('[project]\nname = "core"\n')
-        (project / "libs/core/src/core/main.py").write_text("print('app')\n")
-        assert constraints.main([str(project)]) == 1
-        assert "main.py:1: INV-01" in capsys.readouterr().out
