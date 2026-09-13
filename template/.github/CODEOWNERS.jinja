@@ -1,0 +1,18 @@
+# Protected paths. Changes here need a review from an owner (design 11.2).
+# Replace usernames with @org/team handles once GitHub teams exist.
+{%- set owners = owner_usernames | map('regex_replace', '^', '@') | join(' ') %}
+/working/architecture/      {{ owners }}
+/working/standards/         {{ owners }}
+/working/spec/              {{ owners }}
+/libs/*/tests/              {{ owners }}
+/apps/*/tests/              {{ owners }}
+/pyproject.toml             {{ owners }}
+/libs/*/pyproject.toml      {{ owners }}
+/apps/*/pyproject.toml      {{ owners }}
+/scripts/                   {{ owners }}
+/AGENTS.md                  {{ owners }}
+/Makefile                   {{ owners }}
+/.pre-commit-config.yaml    {{ owners }}
+/.github/                   {{ owners }}
+/.claude/                   {{ owners }}
+/.github/CODEOWNERS         {{ owners }}

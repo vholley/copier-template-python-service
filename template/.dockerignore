@@ -1,0 +1,11 @@
+# Nothing from the delivery system is deployable (design 3.4, register #85).
+.claude/
+.work/
+working/
+docs/
+scripts/
+.github/
+**/tests/
+*.md
+.git/
+.venv/
