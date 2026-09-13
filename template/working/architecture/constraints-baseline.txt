@@ -1,5 +1,1 @@
 # Grandfathered violations; this file may only shrink (D19).
-# The template's own logging_setup reads K_SERVICE and GCP_PROJECT to detect the
-# runtime. Routing them through shared.config is a follow-up work item; until
-# then the read is listed here so INV-01 fails only on new violations (D38).
-libs/shared/src/shared/logging_setup.py:INV-01

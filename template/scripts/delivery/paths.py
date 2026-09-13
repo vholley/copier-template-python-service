@@ -22,8 +22,9 @@ _LIST_HEAD_RE = re.compile(r"^(?P<key>[a-z_]\w*):\s*$")
 _LIST_ITEM_RE = re.compile(r'^\s+-\s*"?(?P<item>[^"]+?)"?\s*$')
 _CONSTRAINT_RE = re.compile(
     r"^-\s+(?P<id>[A-Z][A-Z0-9]*-\d+)\s+\(check:\s+(?P<tool>ruff|importlinter|constraints\.py)"
-    r"\s+(?P<check>[A-Za-z0-9_.-]+)\):\s*(?P<text>.+)$"
+    r"\s+(?P<check>[A-Za-z0-9_.-]+)\)(?P<params>(?:\s*\[[a-z_]+:[^\]]*\])*)\s*:\s*(?P<text>.+)$"
 )
+_PARAM_RE = re.compile(r"\[(?P<key>[a-z_]+):\s*(?P<values>[^\]]*)\]")
 
 
 @dataclass(frozen=True)
@@ -63,12 +64,13 @@ def read_budgets(repo: Path) -> Budgets:
 
 @dataclass(frozen=True)
 class Constraint:
-    """One line of constraints.md (D19 format)."""
+    """One line of constraints.md (D19 format; D39 parameters)."""
 
     id: str
     tool: str
     check: str
     text: str
+    params: dict[str, tuple[str, ...]]
 
 
 def read_constraints(repo: Path) -> list[Constraint]:
@@ -81,8 +83,22 @@ def read_constraints(repo: Path) -> list[Constraint]:
         m = _CONSTRAINT_RE.match(line.strip())
         if m is None:
             continue
-        out.append(Constraint(m.group("id"), m.group("tool"), m.group("check"), m.group("text")))
+        params = {
+            pm.group("key"): tuple(v.strip() for v in pm.group("values").split(",") if v.strip())
+            for pm in _PARAM_RE.finditer(m.group("params") or "")
+        }
+        out.append(
+            Constraint(m.group("id"), m.group("tool"), m.group("check"), m.group("text"), params)
+        )
     return out
+
+
+def constraint_params(repo: Path, constraint_id: str) -> dict[str, tuple[str, ...]]:
+    """Parameters declared on a constraint's line, or an empty dict."""
+    for c in read_constraints(repo):
+        if c.id == constraint_id:
+            return c.params
+    return {}
 
 
 def read_baseline(repo: Path) -> set[str]:

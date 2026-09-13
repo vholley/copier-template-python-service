@@ -31,7 +31,7 @@ coverage.diff.min: 0.90
 
 CONSTRAINTS = """# Constraints
 ## Invariants
-- INV-01 (check: constraints.py INV-01): environment is read only in the config module
+- INV-01 (check: constraints.py INV-01) [allow: core.logging_setup]: environment is read only in the allowed modules
 - INV-02 (check: ruff T20): no print() in library code
 - LAYER-01 (check: importlinter LAYER-01): layers depend forward only
 ## Protected paths
@@ -76,7 +76,11 @@ class TestConstraints:
         code = constraints.main([str(project)])
         out = capsys.readouterr().out.splitlines()
         assert code == 1
-        assert out == ["libs/core/src/core/x.py:4: INV-01 environment read outside the config module; read settings from shared.config. Example: libs/shared/src/shared/config.py:1"]
+        assert out == [
+            "libs/core/src/core/x.py:4: INV-01 environment read outside the allowed modules; "
+            "read settings from shared.config or add the module to INV-01's [allow: ...] list in "
+            "constraints.md. Example: libs/shared/src/shared/config.py:1"
+        ]
 
     def test_clean_tree_passes(self, project: Path) -> None:
         (project / "libs/core/src/core/x.py").write_text("def f() -> int:\n    return 1\n")
@@ -98,6 +102,15 @@ class TestConstraints:
         assert constraints.main(["--write-baseline", str(project)]) == 0
         baseline = (project / "working/architecture/constraints-baseline.txt").read_text()
         assert "libs/core/src/core/old.py:INV-01" in baseline
+
+    def test_allowed_module_may_read_environment(self, project: Path) -> None:
+        (project / "libs/core/src/core/logging_setup.py").write_text("import os\nLEVEL = os.getenv('LOG_LEVEL')\n")
+        assert constraints.main([str(project)]) == 0
+
+    def test_parameters_are_parsed_from_the_constraint_line(self, project: Path) -> None:
+        from delivery import paths as p_
+
+        assert p_.constraint_params(project, "INV-01") == {"allow": ("core.logging_setup",)}
 
     def test_config_module_may_read_environment(self, project: Path) -> None:
         (project / "libs/core/src/core/config.py").write_text("import os\nDB = os.getenv('DB_URL')\n")

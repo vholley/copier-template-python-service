@@ -39,17 +39,19 @@ class Rule(ast.NodeVisitor):
 
 
 class EnvironmentOnlyInConfig(Rule):
-    """INV-01: the environment is read only in the config module.
+    """INV-01: the environment is read only in the allowed modules.
 
-    Configuration enters through shared.config (and Secret Manager when GCP is
-    on); everything else takes settings as values. Flags os.environ[...],
-    os.environ.get(...), and os.getenv(...) outside a module named config.py.
+    The allowed modules are the `[allow: a.b, c.d]` parameter on the constraint's
+    line in constraints.md (D39). With no parameter, only modules named
+    config.py may read it. Flags os.environ[...], os.environ.get(...), and
+    os.getenv(...) elsewhere.
     """
 
     id = "INV-01"
     anchor = ANCHOR + "inv-01"
     message = (
-        "environment read outside the config module; read settings from shared.config. "
+        "environment read outside the allowed modules; read settings from shared.config "
+        "or add the module to INV-01's [allow: ...] list in constraints.md. "
         "Example: libs/shared/src/shared/config.py:1"
     )
 
@@ -81,14 +83,32 @@ class EnvironmentOnlyInConfig(Rule):
 RULES: dict[str, type[Rule]] = {EnvironmentOnlyInConfig.id: EnvironmentOnlyInConfig}
 
 
+def _module_name(repo: Path, f: Path) -> str:
+    """Dotted module name of a source file relative to its member's src directory."""
+    parts = f.relative_to(repo).with_suffix("").parts
+    if "src" in parts:
+        parts = parts[parts.index("src") + 1 :]
+    return ".".join(p for p in parts if p != "__init__")
+
+
+def _exempt(repo: Path, f: Path, rule_id: str) -> bool:
+    """INV-01 exemption: modules named config.py, or those in the [allow: ...] parameter."""
+    if rule_id != "INV-01":
+        return False
+    if f.name == "config.py":
+        return True
+    allowed = paths.constraint_params(repo, rule_id).get("allow", ())
+    return _module_name(repo, f) in allowed
+
+
 def scan(repo: Path) -> list[tuple[str, int, str, str]]:
     """(path, line, rule id, message) for every violation in source files."""
     hits: list[tuple[str, int, str, str]] = []
     for f in paths.source_files(repo):
-        if f.name == "config.py":  # the one place the environment may be read (INV-01)
-            continue
         tree = ast.parse(f.read_text(), filename=str(f))
         for rule_cls in RULES.values():
+            if _exempt(repo, f, rule_cls.id):
+                continue
             rule = rule_cls(paths.rel(repo, f))
             rule.visit(tree)
             hits.extend((p, ln, rule.id, rule.message) for p, ln in rule.hits)
