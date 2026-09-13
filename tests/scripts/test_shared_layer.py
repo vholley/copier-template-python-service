@@ -116,6 +116,9 @@ class TestStateTransitions:
         for s in state.TERMINAL:
             assert state.exits(s) == []
 
+    def test_implement_can_return_to_spec_for_large_amendments(self) -> None:
+        assert "spec" in state.exits("implement")
+
     def test_abandon_is_legal_from_every_non_terminal_state(self) -> None:
         for s in state.STATES:
             if s not in state.TERMINAL:
