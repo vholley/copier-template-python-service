@@ -57,6 +57,12 @@ enable_delivery:
   help: Install the quality-first delivery system (working/, .claude/ process, delivery checks and workflows)?
   default: true
 
+owner_group:
+  type: str
+  help: Optional GitHub handle to auto-request for review on protected paths (e.g. @org/platform or @username). Leave empty for no CODEOWNERS.
+  default: ""
+  when: "{{ enable_delivery }}"
+
 high_risk_paths:
   type: yaml
   help: Glob patterns for high-risk paths (second reviewer required), as a YAML list
@@ -83,6 +89,7 @@ _exclude:
   - "{% if not include_terraform or not use_gcp %}.github/workflows/terraform-plan.yml{% endif %}"
   - "{% if not include_terraform or not use_gcp %}.github/workflows/terraform-apply.yml{% endif %}"
   - "{% if not enable_delivery %}working{% endif %}"
+  - "{% if not enable_delivery or not owner_group %}.github/CODEOWNERS{% endif %}"
   - "{% if not enable_delivery %}.claude/settings.json{% endif %}"
   - "{% if not enable_delivery %}.claude/commands{% endif %}"
   - "{% if not enable_delivery %}.claude/skills{% endif %}"
@@ -109,6 +116,7 @@ _skip_if_exists:
   - "working/standards/budgets.md"
   - "working/observations.md"
   - "working/history/**"
+  - ".github/CODEOWNERS"
 
 _message_after_update: |
   Template updated. If this project was generated before the delivery system

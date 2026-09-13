@@ -58,8 +58,14 @@ class TestDeliveryOff:
 class TestDeliveryAnswers:
     """C02: the delivery answers land in CODEOWNERS and budgets.md; defaults render."""
 
-    def test_no_codeowners_is_generated(self, delivery_project: Path) -> None:
+    def test_no_owner_group_means_no_codeowners(self, delivery_project: Path) -> None:
         assert not (delivery_project / ".github/CODEOWNERS").exists()
+
+    def test_owner_group_generates_codeowners(self, tmp_path: Path) -> None:
+        project = generate(tmp_path, enable_delivery=True, owner_group="@acme/platform")
+        text = (project / ".github/CODEOWNERS").read_text()
+        assert "/working/architecture/      @acme/platform" in text
+        assert "/.claude/" in text
 
     def test_paths_render_into_budgets(self, tmp_path: Path) -> None:
         project = generate(
