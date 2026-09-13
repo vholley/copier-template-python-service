@@ -38,31 +38,54 @@ class Rule(ast.NodeVisitor):
         self.hits.append((self.path, getattr(node, "lineno", 1)))
 
 
-class NoPrintInLibraryCode(Rule):
-    """INV-01: library code logs through logging_setup; print() is for CLIs only."""
+class EnvironmentOnlyInConfig(Rule):
+    """INV-01: the environment is read only in the config module.
+
+    Configuration enters through shared.config (and Secret Manager when GCP is
+    on); everything else takes settings as values. Flags os.environ[...],
+    os.environ.get(...), and os.getenv(...) outside a module named config.py.
+    """
 
     id = "INV-01"
     anchor = ANCHOR + "inv-01"
     message = (
-        "print() in library code; use the logger from core.logging_setup. "
-        "Example: libs/shared/src/shared/logging_setup.py:1"
+        "environment read outside the config module; read settings from shared.config. "
+        "Example: libs/shared/src/shared/config.py:1"
     )
 
-    def visit_Call(self, node: ast.Call) -> None:
-        """Flag calls to the print builtin."""
-        if isinstance(node.func, ast.Name) and node.func.id == "print":
+    def _is_environ(self, node: ast.expr) -> bool:
+        return (
+            isinstance(node, ast.Attribute)
+            and node.attr == "environ"
+            and isinstance(node.value, ast.Name)
+            and node.value.id == "os"
+        )
+
+    def visit_Subscript(self, node: ast.Subscript) -> None:  # noqa: N802 - ast visitor API
+        """os.environ[...]"""
+        if self._is_environ(node.value):
+            self.report(node)
+        self.generic_visit(node)
+
+    def visit_Call(self, node: ast.Call) -> None:  # noqa: N802 - ast visitor API
+        """os.getenv(...) and os.environ.get(...)"""
+        f = node.func
+        if isinstance(f, ast.Attribute) and (
+            (f.attr == "getenv" and isinstance(f.value, ast.Name) and f.value.id == "os")
+            or (f.attr == "get" and self._is_environ(f.value))
+        ):
             self.report(node)
         self.generic_visit(node)
 
 
-RULES: dict[str, type[Rule]] = {NoPrintInLibraryCode.id: NoPrintInLibraryCode}
+RULES: dict[str, type[Rule]] = {EnvironmentOnlyInConfig.id: EnvironmentOnlyInConfig}
 
 
 def scan(repo: Path) -> list[tuple[str, int, str, str]]:
     """(path, line, rule id, message) for every violation in source files."""
     hits: list[tuple[str, int, str, str]] = []
     for f in paths.source_files(repo):
-        if f.name == "main.py":  # CLI entry points may print (Ruff per-file-ignores mirror this)
+        if f.name == "config.py":  # the one place the environment may be read (INV-01)
             continue
         tree = ast.parse(f.read_text(), filename=str(f))
         for rule_cls in RULES.values():
