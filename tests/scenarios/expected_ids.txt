@@ -1,0 +1,2 @@
+# Scenario IDs from the testing plan that run in the template repository.
+# check_traceability.py requires a test_<ID> function for each.

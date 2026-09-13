@@ -7,6 +7,7 @@ requires-python = ">=3.13"
 dev = [
     "copier>=9.0",
     "pytest>=8.3",
+    "pyyaml>=6.0.3",
 ]
 
 [tool.pytest.ini_options]
