@@ -65,6 +65,9 @@ def project(repo: Path, tmp_path: Path) -> Path:
     subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", str(key), "-C", "t@example.invalid"], check=True)
     git(repo, "config", "gpg.format", "ssh")
     git(repo, "config", "user.signingkey", str(key) + ".pub")
+    allowed = tmp_path / "allowed_signers"
+    allowed.write_text(f"t@example.invalid {(key.with_suffix('.pub')).read_text().strip()}\n")
+    git(repo, "config", "gpg.ssh.allowedSignersFile", str(allowed))  # %G? reports N without it
     git(repo, "add", "-A")
     git(repo, "commit", "-q", "-m", "chore: scaffold")
     return repo

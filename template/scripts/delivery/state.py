@@ -349,6 +349,16 @@ def abandon(repo: Path, item_id: str) -> Path:
     return dst
 
 
+def rebind(repo: Path, item_id: str, workflow: str, stage: str) -> State:
+    """Change an item's workflow and stage (used when a spike becomes a change)."""
+    st = load_unchecked(repo, item_id)
+    if workflow not in WORKFLOWS or stage not in STATES:
+        raise StateError(f"cannot rebind to {workflow}/{stage}")
+    st.workflow, st.stage = workflow, stage
+    _write(repo, st)
+    return st
+
+
 def bound_item(repo: Path, branch: str) -> str | None:
     """The work item bound to a branch, or None. Refuses a branch with two items."""
     work = repo / WORK_DIR
