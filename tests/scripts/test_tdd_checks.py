@@ -131,23 +131,23 @@ class TestQuality:
         (member / "libs/core/tests/test_q.py").write_text(body)
 
     def test_no_assertion(self, member: Path, capsys: pytest.CaptureFixture[str]) -> None:
-        self._write(member, 'import pytest\n@pytest.mark.criterion("C1")\ndef test_x():\n    x = 1\n')
+        self._write(member, 'import pytest\n@pytest.mark.spec("core.md#x")\ndef test_x():\n    x = 1\n')
         assert test_ratchet.main(["--quality", member.as_posix()]) == 1
         assert "TQ-01" in capsys.readouterr().out
 
     def test_tautology(self, member: Path, capsys: pytest.CaptureFixture[str]) -> None:
-        self._write(member, 'import pytest\n@pytest.mark.criterion("C1")\ndef test_x():\n    x = 1\n    assert x == x\n')
+        self._write(member, 'import pytest\n@pytest.mark.spec("core.md#x")\ndef test_x():\n    x = 1\n    assert x == x\n')
         assert test_ratchet.main(["--quality", member.as_posix()]) == 1
         assert "TQ-02" in capsys.readouterr().out
 
     def test_constant_assertion(self, member: Path, capsys: pytest.CaptureFixture[str]) -> None:
-        self._write(member, 'import pytest\n@pytest.mark.criterion("C1")\ndef test_x():\n    assert True\n')
+        self._write(member, 'import pytest\n@pytest.mark.spec("core.md#x")\ndef test_x():\n    assert True\n')
         assert test_ratchet.main(["--quality", member.as_posix()]) == 1
         assert "TQ-02" in capsys.readouterr().out
 
     def test_mocking_module_under_test(self, member: Path, capsys: pytest.CaptureFixture[str]) -> None:
         self._write(member, (
-            'import pytest\nfrom unittest.mock import patch\n@pytest.mark.criterion("C1")\n'
+            'import pytest\nfrom unittest.mock import patch\n@pytest.mark.spec("core.md#x")\n'
             'def test_x():\n    with patch("core.calc.add", return_value=3):\n        assert 3 == 3\n'
         ))
         assert test_ratchet.main(["--quality", member.as_posix()]) == 1
@@ -156,11 +156,12 @@ class TestQuality:
     def test_missing_marker_in_enabled_member(self, member: Path, capsys: pytest.CaptureFixture[str]) -> None:
         self._write(member, "def test_x():\n    assert 1 + 1 == 2\n")
         assert test_ratchet.main(["--quality", member.as_posix()]) == 1
-        assert "TQ-04" in capsys.readouterr().out
+        out = capsys.readouterr().out
+        assert "TQ-04" in out and "pytest.mark.spec" in out and "criterion" not in out
 
     def test_compliant_passes(self, member: Path) -> None:
         self._write(member, (
-            'import pytest\nfrom core.calc import add\n@pytest.mark.criterion("C1")\n'
+            'import pytest\nfrom core.calc import add\n@pytest.mark.spec("core.md#x")\n'
             "def test_x():\n    assert add(2, 2) == 4\n"
         ))
         assert test_ratchet.main(["--quality", member.as_posix()]) == 0
@@ -182,7 +183,7 @@ def _item(repo: Path, tests: list[str], change_type: str = "new-behavior") -> No
 class TestOrdering:
     def _red_then_green(self, member: Path) -> None:
         (member / "libs/core/tests/test_mul.py").write_text(
-            'import pytest\nfrom core.calc import mul\n@pytest.mark.criterion("C1")\ndef test_mul():\n    assert mul(2, 3) == 6\n'
+            'import pytest\nfrom core.calc import mul\n@pytest.mark.spec("core.md#x")\ndef test_mul():\n    assert mul(2, 3) == 6\n'
         )
         commit_all(member, "test(t1): red C1")
         (member / "libs/core/src/core/calc.py").write_text(
@@ -202,7 +203,7 @@ class TestOrdering:
         )
         commit_all(member, "feat(t1): mul first")
         (member / "libs/core/tests/test_mul.py").write_text(
-            'import pytest\nfrom core.calc import mul\n@pytest.mark.criterion("C1")\ndef test_mul():\n    assert mul(2, 3) == 6\n'
+            'import pytest\nfrom core.calc import mul\n@pytest.mark.spec("core.md#x")\ndef test_mul():\n    assert mul(2, 3) == 6\n'
         )
         commit_all(member, "test(t1): after")
         _item(member, ["libs/core/tests/test_mul.py::test_mul"])
@@ -213,7 +214,7 @@ class TestOrdering:
 
     def test_test_passing_at_own_commit_is_not_red(self, member: Path, capsys: pytest.CaptureFixture[str]) -> None:
         (member / "libs/core/tests/test_const.py").write_text(
-            'import pytest\n@pytest.mark.criterion("C1")\ndef test_const():\n    assert 1 == 1\n'
+            'import pytest\n@pytest.mark.spec("core.md#x")\ndef test_const():\n    assert 1 == 1\n'
         )
         commit_all(member, "test(t1): not red")
         _item(member, ["libs/core/tests/test_const.py::test_const"])
