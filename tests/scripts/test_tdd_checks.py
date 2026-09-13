@@ -70,11 +70,38 @@ class TestRatchet:
         assert test_ratchet.main(["--base", "base", member.as_posix()]) == 1
         assert "RATCHET-02" in capsys.readouterr().out
 
-    def test_deleted_test_function_fails(self, member: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    def test_deleting_last_test_for_anchor_names_the_anchor(self, member: Path, capsys: pytest.CaptureFixture[str]) -> None:
         (member / "libs/core/tests/test_calc.py").write_text("import pytest\n")
         commit_all(member, "test: delete")
         assert test_ratchet.main(["--base", "base", member.as_posix()]) == 1
-        assert "RATCHET-03" in capsys.readouterr().out
+        out = capsys.readouterr().out
+        assert "RATCHET-03" in out and "core.md#add" in out
+
+    def test_rename_with_marker_passes(self, member: Path) -> None:
+        (member / "libs/core/tests/test_calc.py").write_text(
+            "import pytest\nfrom core.calc import add\n\n"
+            '@pytest.mark.spec("core.md#add")\ndef test_addition_basics():\n    assert add(1, 2) == 3\n    assert add(0, 0) == 0\n'
+        )
+        commit_all(member, "test: rename")
+        assert test_ratchet.main(["--base", "base", member.as_posix()]) == 0
+
+    def test_split_across_two_functions_passes(self, member: Path) -> None:
+        (member / "libs/core/tests/test_calc.py").write_text(
+            "import pytest\nfrom core.calc import add\n\n"
+            '@pytest.mark.spec("core.md#add")\ndef test_add_positive():\n    assert add(1, 2) == 3\n\n'
+            '@pytest.mark.spec("core.md#add")\ndef test_add_zero():\n    assert add(0, 0) == 0\n'
+        )
+        commit_all(member, "test: split")
+        assert test_ratchet.main(["--base", "base", member.as_posix()]) == 0
+
+    def test_moving_assertion_between_anchor_tests_passes(self, member: Path) -> None:
+        (member / "libs/core/tests/test_calc.py").write_text(
+            "import pytest\nfrom core.calc import add\n\n"
+            '@pytest.mark.spec("core.md#add")\ndef test_add():\n    assert add(0, 0) == 0\n\n'
+            '@pytest.mark.spec("core.md#add")\ndef test_add_more():\n    assert add(1, 2) == 3\n'
+        )
+        commit_all(member, "test: move")
+        assert test_ratchet.main(["--base", "base", member.as_posix()]) == 0
 
     def test_skip_marker_fails(self, member: Path, capsys: pytest.CaptureFixture[str]) -> None:
         (member / "libs/core/tests/test_calc.py").write_text(
