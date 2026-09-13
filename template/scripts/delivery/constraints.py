@@ -61,14 +61,14 @@ class EnvironmentOnlyInConfig(Rule):
             and node.value.id == "os"
         )
 
-    def visit_Subscript(self, node: ast.Subscript) -> None:  # noqa: N802 - ast visitor API
-        """os.environ[...]"""
+    def visit_Subscript(self, node: ast.Subscript) -> None:
+        """Flag os.environ[...]."""
         if self._is_environ(node.value):
             self.report(node)
         self.generic_visit(node)
 
-    def visit_Call(self, node: ast.Call) -> None:  # noqa: N802 - ast visitor API
-        """os.getenv(...) and os.environ.get(...)"""
+    def visit_Call(self, node: ast.Call) -> None:
+        """Flag os.getenv(...) and os.environ.get(...)."""
         f = node.func
         if isinstance(f, ast.Attribute) and (
             (f.attr == "getenv" and isinstance(f.value, ast.Name) and f.value.id == "os")
