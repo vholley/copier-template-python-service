@@ -1,0 +1,1 @@
+{"include": ["template/scripts/delivery"], "typeCheckingMode": "strict", "pythonVersion": "3.14", "extraPaths": ["template/scripts"]}
