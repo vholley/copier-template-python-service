@@ -7,11 +7,16 @@ Ratchet (--base REF): compares each changed test file at REF and HEAD.
   RATCHET-04 a skip or xfail marker was added
 The label `test-change-approved` (--labels a,b) allows the change but the lines are still printed.
 
+Identity (D24, D26): a test is identified by the living-spec anchor in its
+@pytest.mark.spec("<file>.md#<anchor>") marker. Assertions are aggregated per
+anchor across the tests that claim it, so renames, splits, and merges that keep
+the assertions are not findings. Unmarked tests fall back to the function name.
+
 Quality (--quality): every test function in the repository.
   TQ-01 no assertion (and no pytest.raises)
   TQ-02 tautology: `x == x`, or a constant assertion
   TQ-03 patches the module under test from its own member's tests
-  TQ-04 no @pytest.mark.spec / @pytest.mark.criterion marker in an enabled member
+  TQ-04 no @pytest.mark.spec marker in an enabled member
 Output: `path:line: RULE message`. Exit 0/1/2.
 """
 
@@ -27,7 +32,7 @@ from delivery import gitx, paths
 from delivery.block import fail
 
 _SKIP_MARKERS = {"skip", "xfail", "skipif"}
-_LINK_MARKERS = {"spec", "criterion"}
+_LINK_MARKERS = {"spec"}
 
 
 @dataclass
@@ -39,6 +44,7 @@ class TestFn:
     atoms: Counter[tuple[str, str]] = field(default_factory=lambda: Counter())
     n_asserts: int = 0
     markers: set[str] = field(default_factory=lambda: set())
+    anchors: set[str] = field(default_factory=lambda: set())
     has_raises: bool = False
     patched: list[str] = field(default_factory=lambda: [])
 
@@ -50,6 +56,20 @@ def _marker_names(fn: ast.FunctionDef) -> set[str]:
         if isinstance(target, ast.Attribute):
             names.add(target.attr)
     return names
+
+
+def _spec_anchors(fn: ast.FunctionDef) -> set[str]:
+    out: set[str] = set()
+    for d in fn.decorator_list:
+        if (
+            isinstance(d, ast.Call)
+            and isinstance(d.func, ast.Attribute)
+            and d.func.attr == "spec"
+            and d.args
+            and isinstance(d.args[0], ast.Constant)
+        ):
+            out.add(str(d.args[0].value))
+    return out
 
 
 def _atoms(test: ast.expr) -> list[tuple[str, str]]:
@@ -69,7 +89,9 @@ def _collect(tree: ast.AST) -> dict[str, TestFn]:
     for node in ast.walk(tree):
         if not isinstance(node, ast.FunctionDef) or not node.name.startswith("test_"):
             continue
-        tf = TestFn(node.name, node.lineno, markers=_marker_names(node))
+        tf = TestFn(
+            node.name, node.lineno, markers=_marker_names(node), anchors=_spec_anchors(node)
+        )
         for sub in ast.walk(node):
             if isinstance(sub, ast.Assert):
                 tf.n_asserts += 1
@@ -94,31 +116,59 @@ def _collect(tree: ast.AST) -> dict[str, TestFn]:
 _WEAKENINGS = {("Eq", "In"), ("Is", "Eq"), ("Eq", "Truth"), ("Is", "Truth")}
 
 
+@dataclass
+class Group:
+    """Tests sharing one identity (a spec anchor, or a bare function name)."""
+
+    line: int
+    atoms: Counter[tuple[str, str]] = field(default_factory=lambda: Counter())
+    names: list[str] = field(default_factory=lambda: [])
+    skipped: set[str] = field(default_factory=lambda: set())
+
+
+def _group(fns: dict[str, TestFn]) -> dict[str, Group]:
+    """Aggregate per identity: every spec anchor a test claims, or `name:<fn>` when unmarked."""
+    groups: dict[str, Group] = {}
+    for tf in fns.values():
+        keys = tf.anchors or {f"name:{tf.name}"}
+        for key in keys:
+            g = groups.setdefault(key, Group(tf.line))
+            g.line = min(g.line, tf.line)
+            g.atoms.update(tf.atoms)
+            g.names.append(tf.name)
+            if tf.markers & _SKIP_MARKERS:
+                g.skipped.add(tf.name)
+    return groups
+
+
 def _compare(path: str, base: dict[str, TestFn], head: dict[str, TestFn]) -> list[str]:
     out: list[str] = []
-    for name, b in base.items():
-        h = head.get(name)
+    bg, hg = _group(base), _group(head)
+    for key, b in bg.items():
+        label = key[5:] if key.startswith("name:") else f"anchor {key}"
+        h = hg.get(key)
         if h is None:
-            out.append(f"{path}:{b.line}: RATCHET-03 test {name} was deleted")
+            out.append(
+                f"{path}:{b.line}: RATCHET-03 {label} lost its last test ({', '.join(b.names)})"
+            )
             continue
-        added_skip = (h.markers & _SKIP_MARKERS) - (b.markers & _SKIP_MARKERS)
-        if added_skip:
-            out.append(f"{path}:{h.line}: RATCHET-04 test {name} gained {sorted(added_skip)[0]}")
+        newly_skipped = h.skipped - b.skipped
+        if newly_skipped:
+            out.append(
+                f"{path}:{h.line}: RATCHET-04 {label}: {sorted(newly_skipped)[0]} gained a skip/xfail marker"
+            )
         weakened = False
         for (left, op), n in b.atoms.items():
             if h.atoms[(left, op)] >= n:
                 continue
-            for _b_op, h_op in _WEAKENINGS:
-                if _b_op == op and h.atoms[(left, h_op)] > 0:
-                    out.append(f"{path}:{h.line}: RATCHET-02 test {name}: {op} weakened to {h_op}")
+            for b_op, h_op in _WEAKENINGS:
+                if b_op == op and h.atoms[(left, h_op)] > 0:
+                    out.append(f"{path}:{h.line}: RATCHET-02 {label}: {op} weakened to {h_op}")
                     weakened = True
                     break
-        total_b = sum(b.atoms.values())
-        total_h = sum(h.atoms.values())
+        total_b, total_h = sum(b.atoms.values()), sum(h.atoms.values())
         if not weakened and total_h < total_b:
-            out.append(
-                f"{path}:{h.line}: RATCHET-01 test {name} lost {total_b - total_h} assertion(s)"
-            )
+            out.append(f"{path}:{h.line}: RATCHET-01 {label} lost {total_b - total_h} assertion(s)")
     return out
 
 
@@ -188,10 +238,10 @@ def quality(repo: Path) -> list[str]:
                             f"{rel}:{tf.line}: TQ-03 test {tf.name} patches {target}, "
                             f"part of the module under test"
                         )
-            if enabled and not (tf.markers & _LINK_MARKERS):
+            if enabled and not tf.anchors:
                 out.append(
-                    f"{rel}:{tf.line}: TQ-04 test {tf.name} has no @pytest.mark.spec or "
-                    f"@pytest.mark.criterion marker"
+                    f"{rel}:{tf.line}: TQ-04 test {tf.name} has no @pytest.mark.spec marker "
+                    "naming the living-spec statement it proves"
                 )
     return sorted(set(out))
 
