@@ -3,8 +3,8 @@
 Interfaces fixed here:
 - test_ratchet.main(["--base", <ref>, "--labels", "a,b", repo]) and ["--quality", repo]
   output `path:line: RATCHET-xx ...` / `path:line: TQ-0x ...`
-- ordering.main(["--item", id, "--base", ref, repo]); criteria.json criteria carry
-  "tests": ["path::test_name"]; defects: diagnosis.md `location: file:function`
+- ordering.main(["--item", id, "--base", ref, repo]); .work/<id>/tests.json maps
+  criterion id -> [{"test": "path::test_name", "commit": sha}] (D29); defects: diagnosis.md `location: file:function`
 - diff_coverage.main(["--base", ref, "--coverage-json", path, repo]); budget coverage.diff.min
 """
 
@@ -175,9 +175,9 @@ def _item(repo: Path, tests: list[str], change_type: str = "new-behavior") -> No
     (repo / ".work/t1/criteria.json").write_text(json.dumps({
         "id": "t1", "change_type": change_type,
         "criteria": [{"id": "C1", "class": "positive", "statement": "s", "verify": "x",
-                      "status": "fail", "evidence": None, "evaluator": None, "plan_steps": [],
-                      "tests": tests}],
+                      "status": "fail", "evidence": None, "evaluator": None, "plan_steps": []}],
     }))
+    (repo / ".work/t1/tests.json").write_text(json.dumps({"C1": [{"test": t, "commit": ""} for t in tests]}))
 
 
 class TestOrdering:

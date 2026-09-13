@@ -109,14 +109,12 @@ def build_standard_item(repo: Path, *, item: str = "PROJ-1", code_first: bool = 
         "id": item, "change_type": "new-behavior",
         "criteria": [
             {"id": "C1", "class": "positive", "statement": "mul returns the product", "verify": "pytest",
-             "status": "fail", "evidence": None, "evaluator": None, "plan_steps": ["S1"],
-             "tests": ["libs/core/tests/test_mul.py::test_mul"]},
+             "status": "fail", "evidence": None, "evaluator": None, "plan_steps": ["S1"]},
             {"id": "C2", "class": "negative", "statement": "mul rejects non-int", "verify": "pytest",
-             "status": "fail", "evidence": None, "evaluator": None, "plan_steps": ["S1"],
-             "tests": ["libs/core/tests/test_mul.py::test_mul_rejects"]},
+             "status": "fail", "evidence": None, "evaluator": None, "plan_steps": ["S1"]},
         ],
     }, indent=2))
-    hs = state.file_hash(d / "spec.md"); hc = state.file_hash(d / "criteria.json"); hd = state.file_hash(d / "decisions.md")
+    hs = state.accept_hash(d / "spec.md"); hc = state.accept_hash(d / "criteria.json"); hd = state.accept_hash(d / "decisions.md")
     shas["spec"] = commit(repo, f"accept(work-{item}): spec\n\nAccepts spec.\n\nAccept: spec sha256={hs} sha256={hc}\nAccept-Decision: D1 sha256={hd}\nWork-Item: {item}\n")
 
     impl = (
@@ -132,8 +130,12 @@ def build_standard_item(repo: Path, *, item: str = "PROJ-1", code_first: bool = 
         '@pytest.mark.spec("core.md#mul")\ndef test_mul():\n    assert mul(2, 3) == 6\n\n'
         '@pytest.mark.spec("core.md#mul")\ndef test_mul_rejects():\n    with pytest.raises(TypeError):\n        mul("a", 1)\n'
     )
-    commit(repo, f"test({item}): red C1 C2", sign=False)
-    ht = state.file_hash(repo / "libs/core/tests/test_mul.py")
+    red_sha = commit(repo, f"test({item}): red C1 C2", sign=False)
+    (d / "tests.json").write_text(json.dumps({
+        "C1": [{"test": "libs/core/tests/test_mul.py::test_mul", "commit": red_sha}],
+        "C2": [{"test": "libs/core/tests/test_mul.py::test_mul_rejects", "commit": red_sha}],
+    }, indent=2))
+    ht = state.file_hash(d / "tests.json")
     shas["red"] = commit(repo, f"accept(work-{item}): red\n\nAccepts red tests.\n\nAccept: red sha256={ht}\nWork-Item: {item}\n")
     if not code_first:
         (repo / "libs/core/src/core/calc.py").write_text(impl)
@@ -228,7 +230,8 @@ class TestContractFails:
         (signed_repo / ".work/PROJ-1/spec.md").write_text("# Spec edited after acceptance\n")
         commit(signed_repo, "chore: edit spec", sign=False)
         assert run_contract(signed_repo) == 1
-        assert "CONTRACT-03" in self._out(capsys) and "/amend" in self._out(capsys)
+        out = self._out(capsys)
+        assert "CONTRACT-03" in out and "/amend" in out
 
     def test_ordering_violation(self, signed_repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
         build_standard_item(signed_repo, code_first=True)
@@ -241,7 +244,8 @@ class TestContractFails:
         d.write_text(d.read_text() + "## D2: another\nalternative-rejected: x\nramification-if-wrong:\nscope: local\naccepted-by [human]: t\n")
         commit(signed_repo, "chore: decision", sign=False)
         assert run_contract(signed_repo) == 1
-        assert "CONTRACT-05" in self._out(capsys) and "D2" in self._out(capsys)
+        out = self._out(capsys)
+        assert "CONTRACT-05" in out and "D2" in out
 
     def test_empty_assumption_risk(self, signed_repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
         build_standard_item(signed_repo)
@@ -266,7 +270,8 @@ class TestContractFails:
         git(signed_repo, "checkout", "-q", "base", "--", "working/spec/core.md")
         commit(signed_repo, "chore: revert spec", sign=False)
         assert run_contract(signed_repo) == 1
-        assert "CONTRACT-08" in self._out(capsys) and "working/spec/core.md" in self._out(capsys)
+        out = self._out(capsys)
+        assert "CONTRACT-08" in out and "working/spec/core.md" in out
 
     def test_diff_over_budget(self, signed_repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
         build_standard_item(signed_repo)
@@ -279,7 +284,8 @@ class TestContractFails:
         build_standard_item(signed_repo)
         (signed_repo / "pr.md").write_text(PR_DESC.replace("## Risk\ntier: standard; verified by C1.\n\n", ""))
         assert run_contract(signed_repo) == 1
-        assert "CONTRACT-10" in self._out(capsys) and "Risk" in self._out(capsys)
+        out = self._out(capsys)
+        assert "CONTRACT-10" in out and "Risk" in out
 
     def test_llm_coauthor_trailer(self, signed_repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
         build_standard_item(signed_repo)
@@ -294,7 +300,8 @@ class TestContractFails:
         commit(signed_repo, "chore: spike", sign=False)
         (signed_repo / "pr.md").write_text("spike\n")
         assert run_contract(signed_repo, item="SPIKE-1") == 1
-        assert "CONTRACT-12" in self._out(capsys) and "make start" in self._out(capsys)
+        out = self._out(capsys)
+        assert "CONTRACT-12" in out and "make start" in out
 
     def test_state_disagrees_with_rebuild(self, signed_repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
         build_standard_item(signed_repo)

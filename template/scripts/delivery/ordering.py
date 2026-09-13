@@ -1,5 +1,7 @@
 """Red before green, for every criterion; and for defects, the fix lands where the diagnosis says.
 
+The criterion-to-test map is .work/<id>/tests.json (D29).
+
   ORDER-01 implementation committed before the criterion's test (or no test on the branch)
   ORDER-02 the test passed at the commit that added it (it was never red)
   ORDER-03 defect: the diff does not touch the diagnosed location
@@ -124,11 +126,17 @@ def check(repo: Path, base: str, item: str) -> list[str]:
     """All ORDER-xx lines for a work item."""
     out: list[str] = []
     data = json.loads((repo / ".work" / item / "criteria.json").read_text())
+    tests_path = repo / ".work" / item / "tests.json"
+    tmap: dict[str, list[dict[str, str]]] = (
+        json.loads(tests_path.read_text()) if tests_path.exists() else {}
+    )
     for c in data.get("criteria", []):
         cid = str(c.get("id"))
-        tests = list(c.get("tests") or [])
+        if c.get("class") == "budget":
+            continue
+        tests = [str(e.get("test")) for e in tmap.get(cid, [])]
         if not tests and data.get("change_type") != "trivial":
-            out.append(f".work/{item}/criteria.json:1: ORDER-01 {cid} lists no tests (D22)")
+            out.append(f".work/{item}/tests.json:1: ORDER-01 {cid} lists no tests (D29)")
             continue
         for t in tests:
             path, _, name = t.partition("::")

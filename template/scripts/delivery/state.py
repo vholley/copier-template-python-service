@@ -106,8 +106,32 @@ class State:
 
 
 def file_hash(path: Path) -> str:
-    """SHA-256 of a file, the value carried in Accept: trailers."""
+    """SHA-256 of a file's bytes."""
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+_CRITERIA_DEFINITION_FIELDS = ("id", "class", "statement", "verify")
+
+
+def accept_hash(path: Path) -> str:
+    """The value carried in Accept: trailers (D30).
+
+    For criteria.json, the hash covers the definition only (change_type and each
+    criterion's id, class, statement, verify), because status, evidence,
+    evaluator, and plan_steps are written after acceptance by design. Every
+    other file is hashed by its bytes.
+    """
+    if path.name != "criteria.json":
+        return file_hash(path)
+    data = json.loads(path.read_text())
+    projection = {
+        "change_type": data.get("change_type"),
+        "criteria": [
+            {k: c.get(k) for k in _CRITERIA_DEFINITION_FIELDS} for c in data.get("criteria", [])
+        ],
+    }
+    canonical = json.dumps(projection, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode()).hexdigest()
 
 
 def _checksum(payload: dict[str, object]) -> str:
@@ -143,7 +167,8 @@ def _write(repo: Path, st: State) -> None:
             tmp.unlink()
 
 
-def _load_raw(repo: Path, item_id: str) -> State:
+def load_unchecked(repo: Path, item_id: str) -> State:
+    """Load state.json verifying only its checksum (no git or artifact checks)."""
     path = _state_path(repo, item_id)
     if not path.exists():
         raise IntegrityError(
@@ -187,17 +212,18 @@ _STAGE_FILES: dict[str, list[str]] = {
     "intent": ["intent.md"],
     "spec": ["spec.md", "criteria.json"],
     "diagnosis": ["diagnosis.md"],
-    "red": [],  # tests live outside .work; hash is of criteria.json's test map
+    "red": ["tests.json"],
 }
 
 
-def _check_accepted_files(repo: Path, item_id: str) -> list[str]:
+def accepted_file_problems(repo: Path, item_id: str) -> list[str]:
+    """Accepted artifacts whose content no longer matches their acceptance hash."""
     problems: list[str] = []
     for stage, (_sha, hashes) in acceptances(repo, item_id).items():
         files = _STAGE_FILES.get(stage, [])
         for name, expected in zip(files, hashes, strict=False):
             path = item_dir(repo, item_id) / name
-            if path.exists() and file_hash(path) != expected:
+            if path.exists() and accept_hash(path) != expected:
                 problems.append(
                     f"{name} changed since Accept: {stage}. "
                     f"NEXT: make accept STAGE={stage} (or /amend)"
@@ -223,8 +249,8 @@ def create(repo: Path, item_id: str, workflow: str, branch: str) -> State:
 
 def read(repo: Path, item_id: str) -> State:
     """Load state, verifying checksum and consistency with git and artifacts."""
-    st = _load_raw(repo, item_id)
-    problems = _check_accepted_files(repo, item_id)
+    st = load_unchecked(repo, item_id)
+    problems = accepted_file_problems(repo, item_id)
     if not gitx.branch_exists(repo, st.branch):
         problems.append(f"branch {st.branch} not found. NEXT: make adopt-branch {item_id}")
     if problems:
@@ -236,17 +262,17 @@ def check(repo: Path, item_id: str) -> list[str]:
     """Non-raising consistency report, one line per disagreement, with repairs."""
     report: list[str] = []
     try:
-        st = _load_raw(repo, item_id)
+        st = load_unchecked(repo, item_id)
     except IntegrityError as exc:
         return [str(exc)]
-    report.extend(_check_accepted_files(repo, item_id))
+    report.extend(accepted_file_problems(repo, item_id))
     if not gitx.branch_exists(repo, st.branch):
         report.append(f"branch {st.branch} not found. NEXT: make adopt-branch {item_id}")
     rel = str(_state_path(repo, item_id).relative_to(repo))
     if not gitx.is_clean(repo, rel):
         report.append(f"state.json has uncommitted changes. NEXT: commit {rel}")
     derived = derive_stage(repo, item_id)
-    if derived != st.stage and st.stage not in ("escalated", "bounced", "verify", "review"):
+    if derived != st.stage and st.stage not in ("escalated", "bounced"):
         report.append(
             f"recorded stage {st.stage} but artifacts imply {derived}. "
             f"NEXT: make rebuild ID={item_id}"
@@ -263,7 +289,7 @@ def exits(stage: str) -> list[str]:
 
 def advance(repo: Path, item_id: str, to: str, *, force: bool = False) -> State:
     """Move to a legal next stage; without force, the transition's gate must be met."""
-    st = _load_raw(repo, item_id)
+    st = load_unchecked(repo, item_id)
     if to not in exits(st.stage):
         raise TransitionError(f"illegal transition {st.stage} -> {to}")
     if not force:
@@ -292,7 +318,7 @@ def _check_gate(st: State, to: str) -> None:
 
 def record_acceptance(repo: Path, item_id: str, stage: str, sha: str) -> State:
     """Record the commit that accepted a stage."""
-    st = _load_raw(repo, item_id)
+    st = load_unchecked(repo, item_id)
     st.accepted[stage] = sha
     _write(repo, st)
     return st
@@ -300,7 +326,7 @@ def record_acceptance(repo: Path, item_id: str, stage: str, sha: str) -> State:
 
 def bump_retry(repo: Path, item_id: str) -> int:
     """Increment the stop-hook retry counter and return it."""
-    st = _load_raw(repo, item_id)
+    st = load_unchecked(repo, item_id)
     st.retries += 1
     _write(repo, st)
     return st.retries
@@ -308,7 +334,7 @@ def bump_retry(repo: Path, item_id: str) -> int:
 
 def abandon(repo: Path, item_id: str) -> Path:
     """Close an item from any non-terminal stage and archive it to working/history."""
-    st = _load_raw(repo, item_id)
+    st = load_unchecked(repo, item_id)
     if st.stage in TERMINAL:
         raise TransitionError(f"{item_id} is already {st.stage}")
     st.stage = "abandoned"
@@ -355,7 +381,7 @@ def derive_stage(repo: Path, item_id: str) -> str:
     acc = acceptances(repo, item_id)
     defect = (d / "diagnosis.md").exists() or "diagnosis" in acc
     if "red" in acc or ("diagnosis" in acc and (d / "plan.md").exists()):
-        return "implement"
+        return _build_stage(d)
     if "diagnosis" in acc:
         return "plan"
     if "spec" in acc:
@@ -365,6 +391,24 @@ def derive_stage(repo: Path, item_id: str) -> str:
     if "intent" in acc:
         return "spec" if (d / "spec.md").exists() else "clarify"
     return "intent"
+
+
+def _build_stage(d: Path) -> str:
+    """implement, verify, or review, from criteria.json's status and evaluator fields."""
+    path = d / "criteria.json"
+    if not path.exists():
+        return "implement"
+    try:
+        crit = json.loads(path.read_text()).get("criteria", [])
+    except json.JSONDecodeError:
+        return "implement"
+    if not crit:
+        return "implement"
+    if all(c.get("status") == "pass" and c.get("evidence") for c in crit):
+        if all(c.get("evaluator") == "confirmed" for c in crit):
+            return "review"
+        return "verify"
+    return "implement"
 
 
 def rebuild(repo: Path, item_id: str) -> State:
