@@ -21,7 +21,6 @@ DELIVERY_ONLY_PATHS = [
     "scripts/delivery",
     "scripts/hooks",
     ".github/workflows/delivery-checks.yml",
-    ".github/CODEOWNERS",
     ".dockerignore",
     "MIGRATION.md",
 ]
@@ -59,11 +58,8 @@ class TestDeliveryOff:
 class TestDeliveryAnswers:
     """C02: the delivery answers land in CODEOWNERS and budgets.md; defaults render."""
 
-    def test_owner_usernames_render_into_codeowners(self, tmp_path: Path) -> None:
-        project = generate(tmp_path, enable_delivery=True, owner_usernames=["alice", "bob"])
-        text = (project / ".github/CODEOWNERS").read_text()
-        assert "@alice @bob" in text
-        assert "/working/architecture/" in text
+    def test_no_codeowners_is_generated(self, delivery_project: Path) -> None:
+        assert not (delivery_project / ".github/CODEOWNERS").exists()
 
     def test_paths_render_into_budgets(self, tmp_path: Path) -> None:
         project = generate(
@@ -103,8 +99,7 @@ class TestTasksAndMessage:
             "working/architecture/**",
             "working/standards/budgets.md",
             "working/observations.md",
-            ".github/CODEOWNERS",
-        ]:
+                ]:
             assert pattern in skip, pattern
 
     def test_tasks_mention_setup_only_when_enabled(self) -> None:

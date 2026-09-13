@@ -52,7 +52,7 @@ flowchart TD
         CHECKS["mechanical checks<br/>ruff · pyright strict · tests · test ratchet ·<br/>import-linter + constraints · budgets ·<br/>spec coverage · diff coverage ·<br/>red-before-green ordering (defects: fix at diagnosed location)"]
         REVIEWERS["two read-only reviewer subagents<br/>necessity: which criterion requires each hunk?<br/>spec: does the delivered behavior match the intent?"]
         HUMAN{{"HUMAN REVIEWER<br/>1 did the spec solve the intent?<br/>2 were the accepted decisions sound?<br/>3 anything the spec did not require?<br/>records Intent-match: yes / partial / no"}}
-        RULES["branch rules on develop<br/>PR required · all checks green ·<br/>code-owner review on protected paths ·<br/>1 approval (2 for high-risk) · no direct pushes"]
+        RULES["branch rules on develop<br/>PR required · all checks green ·<br/>one approval from someone who is not the author ·<br/>no direct pushes"]
     end
     PRDESC --> TIER
     TIER -->|"No behavior change?"| CHECKS

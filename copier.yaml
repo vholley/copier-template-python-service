@@ -57,12 +57,6 @@ enable_delivery:
   help: Install the quality-first delivery system (working/, .claude/ process, delivery checks and workflows)?
   default: true
 
-owner_usernames:
-  type: yaml
-  help: GitHub usernames that own protected paths (CODEOWNERS), as a YAML list
-  default: ["CHANGE-ME"]
-  when: "{{ enable_delivery }}"
-
 high_risk_paths:
   type: yaml
   help: Glob patterns for high-risk paths (second reviewer required), as a YAML list
@@ -103,7 +97,6 @@ _exclude:
   - "{% if not enable_delivery %}.github/workflows/post-merge.yml{% endif %}"
   - "{% if not enable_delivery %}.github/workflows/entropy-audit.yml{% endif %}"
   - "{% if not enable_delivery %}.github/actions/setup{% endif %}"
-  - "{% if not enable_delivery %}.github/CODEOWNERS{% endif %}"
   - "{% if not enable_delivery %}.dockerignore{% endif %}"
   - "{% if not enable_delivery %}MIGRATION.md{% endif %}"
   - "{% if not enable_delivery %}docs/DELIVERY-SYSTEM.md{% endif %}"
@@ -116,7 +109,6 @@ _skip_if_exists:
   - "working/standards/budgets.md"
   - "working/observations.md"
   - "working/history/**"
-  - ".github/CODEOWNERS"
 
 _message_after_update: |
   Template updated. If this project was generated before the delivery system
