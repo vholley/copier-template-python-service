@@ -1,0 +1,32 @@
+name: entropy-audit
+
+# Scheduled; no triggering engineer, so it never commits (1.7). It writes drafts and check output.
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+env:
+  PYTHONPATH: scripts
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: ./.github/actions/setup
+      - name: Deterministic part
+        run: |
+          uv run python -m delivery.audit_observations
+          uv run python -m delivery.vendored_check
+          uv run python -m delivery.loop_report --base "$(git rev-list -n1 --before='7 days ago' HEAD)" | tee loop-report.md
+      - uses: anthropics/claude-code-action@v1
+        with:
+          prompt: "/entropy-audit"
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          allowed_tools: "Read,Grep,Glob,Bash(make constraints),Bash(make budgets),Bash(make spec-coverage),Bash(git log*)"

@@ -1,13 +1,19 @@
-## What and why
+## Intent
+<!-- Two sentences: what and why. Link .work/<id>/intent.md for a change; one line for a quick change. -->
 
-<!-- What does this PR change? Why is this change needed? Link any relevant issues. -->
+## Risk
+<!-- tier: quick change | standard | high. One sentence: what could go wrong and how it is verified. -->
 
-## How tested
+## What changed, by criterion
+<!-- - C1 <statement>: <files> <evidence link> -->
 
-<!-- How did you verify this works? Unit tests, manual testing, both? -->
+## Decisions
+<!-- - D1 <decision>: <what happens if it is wrong>; accepted by <name> -->
 
-## Checklist
+## Promotions
+<!-- ADR / living-spec / doc edits included in this PR, or "none" -->
 
-- [ ] `make ci` passes locally
-- [ ] New behaviour has test coverage
-- [ ] No secrets or credentials committed
+## Evidence
+<!-- Evaluator report link; trace run ids -->
+
+<!-- Reviewer: add to your approval `Intent-match: yes | partial | no` -->

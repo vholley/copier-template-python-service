@@ -46,7 +46,7 @@ def docker_available() -> bool:
 def image_files(name: str) -> list[str]:
     """Paths inside an image, via a throwaway container running find."""
     docker = shutil.which("docker") or "docker"
-    out = subprocess.run(  # noqa: S603 - fixed executable
+    out = subprocess.run(
         [docker, "run", "--rm", "--entrypoint", "find", name, "/", "-xdev", "-type", "f"],
         capture_output=True,
         text=True,

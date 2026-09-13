@@ -78,10 +78,10 @@ def read_constraints(repo: Path) -> list[Constraint]:
         return []
     out: list[Constraint] = []
     for line in path.read_text().splitlines():
-        if m := _CONSTRAINT_RE.match(line.strip()):
-            out.append(
-                Constraint(m.group("id"), m.group("tool"), m.group("check"), m.group("text"))
-            )
+        m = _CONSTRAINT_RE.match(line.strip())
+        if m is None:
+            continue
+        out.append(Constraint(m.group("id"), m.group("tool"), m.group("check"), m.group("text")))
     return out
 
 

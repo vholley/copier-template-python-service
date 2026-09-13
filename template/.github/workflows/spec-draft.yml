@@ -1,0 +1,27 @@
+name: spec-draft
+
+# Runs when an engineer pushes an intent acceptance; authors the draft as that engineer (1.7).
+on:
+  push:
+    branches-ignore: [main, develop]
+
+permissions:
+  contents: write
+
+jobs:
+  draft:
+    if: "startsWith(github.event.head_commit.message, 'accept(') && contains(github.event.head_commit.message, 'Accept: intent')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: ./.github/actions/setup
+      - name: Author as the triggering engineer
+        run: |
+          git config user.name "${{ github.event.head_commit.author.name }}"
+          git config user.email "${{ github.event.head_commit.author.email }}"
+      - uses: anthropics/claude-code-action@v1
+        with:
+          prompt: "/clarify --headless && /spec --draft"
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          allowed_tools: "Read,Grep,Glob,Write(.work/**),Edit(.work/**),Bash(git add .work/*),Bash(git commit*),Bash(git push*)"

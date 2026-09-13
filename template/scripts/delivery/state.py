@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import re
 import shutil
 from dataclasses import asdict, dataclass, field
@@ -149,7 +148,7 @@ def _state_path(repo: Path, item_id: str) -> Path:
 
 
 def _replace(src: Path, dst: Path) -> None:
-    os.replace(src, dst)
+    src.replace(dst)
 
 
 def _write(repo: Path, st: State) -> None:

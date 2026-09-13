@@ -302,7 +302,7 @@ def _red_stage_problems(repo: Path, d: Path) -> list[str]:
     for entries in tmap.values():
         for e in entries:
             t = str(e.get("test"))
-            r = subprocess.run(  # noqa: S603 - fixed interpreter
+            r = subprocess.run(
                 [
                     sys.executable,
                     "-m",
@@ -344,9 +344,11 @@ def stop(_payload: dict[str, object], repo: Path) -> tuple[int, str, str]:
         problems.append("make green has not passed since the last edit")
     crit = d / "criteria.json"
     if crit.exists():
-        for c in json.loads(crit.read_text()).get("criteria", []):
-            if c.get("status") == "pass" and not c.get("evidence"):
-                problems.append(f"{c.get('id')} is marked pass with no evidence")
+        problems.extend(
+            f"{c.get('id')} is marked pass with no evidence"
+            for c in json.loads(crit.read_text()).get("criteria", [])
+            if c.get("status") == "pass" and not c.get("evidence")
+        )
     if st.stage == "red":
         problems.extend(_red_stage_problems(repo, d))
     if not problems:
@@ -412,7 +414,7 @@ def post_edit(payload: dict[str, object], repo: Path) -> tuple[int, str, str]:
     import subprocess
 
     uv = shutil.which("uv") or "uv"
-    r = subprocess.run(  # noqa: S603 - fixed executable
+    r = subprocess.run(
         [uv, "run", "ruff", "check", "--output-format", "concise", path],
         cwd=repo,
         capture_output=True,
@@ -459,6 +461,9 @@ def main(argv: list[str]) -> int:
         )
         return 2
     repo = Path(argv[1]) if len(argv) > 1 else Path.cwd()
+    if argv[0] == "record-green":
+        record_green(repo)
+        return 0
     code, out, err = run(argv[0], _read_payload(), repo)
     if out:
         print(out, end="")

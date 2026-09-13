@@ -9,6 +9,11 @@ dev = [
     "ruff>=0.8.0",
     "pyright>=1.1.390",
     "pre-commit>=4.0",
+{%- if enable_delivery %}
+    "import-linter>=2.0",
+    "diff-cover>=9.0",
+    "mutmut>=3.0",
+{%- endif %}
 ]
 
 # ---------------------------------------------------------------------------
@@ -44,6 +49,15 @@ select = [
     "PERF", # perflint (performance anti-patterns)
     "G",    # flake8-logging-format (use % formatting in log calls, not f-strings)
     "PLE",  # pylint errors (bad return in __init__, duplicate bases, await outside async)
+{%- if enable_delivery %}
+    "C901",    # cyclomatic complexity budget (working/standards/budgets.md)
+    "PLR0913", # too many arguments
+    "PLR0915", # too many statements
+    "PLR0912", # too many branches
+    "PLR0911", # too many returns
+    "TID251",  # banned imports with custom messages
+    "TID253",  # banned module-level imports
+{%- endif %}
 ]
 ignore = [
     "D100",   # missing docstring in public module
@@ -53,13 +67,39 @@ ignore = [
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
+{%- if enable_delivery %}
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10          # budgets.md: complexity.max
+
+[tool.ruff.lint.pylint]
+max-args = 6                 # budgets.md: function.max_args
+max-statements = 50          # budgets.md: function.max_statements
+max-branches = 12
+max-returns = 6
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+# Add lines like: "requests".msg = "CONSTRAINT net-01: use shared.http. Example: libs/shared/src/shared/http.py:1"
+{%- endif %}
 
 [tool.ruff.lint.per-file-ignores]
 "**/tests/**/*.py" = [
     "D",      # docstrings not required in tests
     "S101",   # assert is fine in tests
     "ANN",    # less strict typing in tests
+{%- if enable_delivery %}
+    "PLR0913",
+    "PLR0915",
+{%- endif %}
 ]
+{%- if enable_delivery %}
+"**/scripts/delivery/**/*.py" = [
+    "T20",    # the delivery scripts print their findings by design
+    "S603",   # subprocess calls with fixed executables
+    "N802",   # ast.NodeVisitor method names
+]
+"**/cli.py" = ["T20"]
+{%- endif %}
 
 [tool.ruff.format]
 quote-style = "double"
@@ -73,6 +113,11 @@ indent-style = "space"
 minversion = "8.0"
 addopts = ["-ra", "--strict-markers", "--strict-config"]
 testpaths = ["libs", "apps"]
+{%- if enable_delivery %}
+markers = [
+    "spec(anchor): links a test to a living-spec statement, e.g. spec(\"core.md#refund-window\")",
+]
+{%- endif %}
 python_files = ["test_*.py", "*_test.py"]
 asyncio_mode = "auto"
 
@@ -86,3 +131,20 @@ exclude_lines = [
     "if TYPE_CHECKING:",
     "raise NotImplementedError",
 ]
+{%- if enable_delivery %}
+
+# ---------------------------------------------------------------------------
+# import-linter: layer and forbidden-import contracts (working/architecture/constraints.md)
+# scripts/new-app.sh appends a layers contract for each new app.
+# ---------------------------------------------------------------------------
+
+[tool.importlinter]
+root_packages = ["shared"]
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "PKG-01: libs do not import apps (working/architecture/constraints.md#pkg-01)"
+type = "forbidden"
+source_modules = ["shared"]
+forbidden_modules = []
+{%- endif %}

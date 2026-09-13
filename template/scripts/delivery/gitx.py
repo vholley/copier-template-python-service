@@ -8,14 +8,17 @@ from __future__ import annotations
 
 import shutil
 import subprocess
-from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 GIT = shutil.which("git") or "/usr/bin/git"
 
 
 def run(repo: Path, *args: str, check: bool = True) -> str:
     """Run a git command in repo and return stdout; raise on failure when check is set."""
-    result = subprocess.run(  # noqa: S603 - fixed executable, no shell
+    result = subprocess.run(
         [GIT, "-C", str(repo), *args], capture_output=True, text=True, check=False
     )
     if check and result.returncode != 0:

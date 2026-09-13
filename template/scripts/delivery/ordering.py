@@ -62,7 +62,7 @@ def _run_test_at(repo: Path, sha: str, test: str) -> int:
             env = dict(os.environ)
             src_dirs = [str(p) for p in [*wt.glob("libs/*/src"), *wt.glob("apps/*/src")]]
             env["PYTHONPATH"] = os.pathsep.join([*src_dirs, env.get("PYTHONPATH", "")])
-            result = subprocess.run(  # noqa: S603 - fixed interpreter
+            result = subprocess.run(
                 [
                     sys.executable,
                     "-m",

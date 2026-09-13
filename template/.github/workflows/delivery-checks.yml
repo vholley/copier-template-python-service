@@ -1,0 +1,71 @@
+name: delivery-checks
+
+on:
+  pull_request:
+    branches: [develop]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+env:
+  PYTHONPATH: scripts
+
+jobs:
+  tier:
+    name: classify the change
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: ./.github/actions/setup
+      - name: Compute tier and label
+        run: |
+          uv run python -m delivery.compute_tier --base origin/${{ github.base_ref }} | tee tier.txt
+          TIER=$(sed -n 's/^tier: //p' tier.txt)
+          gh pr edit ${{ github.event.pull_request.number }} --add-label "tier:$TIER" || true
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  contract:
+    name: pull-request contract
+    runs-on: ubuntu-latest
+    needs: tier
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: ./.github/actions/setup
+      - name: Write PR description and labels
+        run: |
+          gh pr view ${{ github.event.pull_request.number }} --json body -q .body > pr.md
+          gh pr view ${{ github.event.pull_request.number }} --json labels -q '[.labels[].name] | join(",")' > labels.txt
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Contract
+        run: |
+          ITEM=$(uv run python -m delivery.state_cli bound || true)
+          if [ -n "$ITEM" ]; then ARG="--item $ITEM"; else ARG="--no-item"; fi
+          uv run python -m delivery.pr_contract $ARG --base origin/${{ github.base_ref }} \
+            --signers github:${{ github.repository_owner }} --description pr.md --labels "$(cat labels.txt)"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  test-ratchet:
+    name: tests only get stronger
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: ./.github/actions/setup
+      - run: uv run python -m delivery.test_ratchet --base origin/${{ github.base_ref }} --labels "${{ join(github.event.pull_request.labels.*.name, ',') }}"
+      - run: uv run python -m delivery.test_ratchet --quality
+
+  diff-coverage:
+    name: changed lines are covered
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: ./.github/actions/setup
+      - run: uv run pytest --cov --cov-report=json:coverage.json || [ $? -eq 5 ]
+      - run: uv run python -m delivery.diff_coverage --base origin/${{ github.base_ref }} --coverage-json coverage.json

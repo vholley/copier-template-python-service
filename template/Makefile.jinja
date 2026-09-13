@@ -11,6 +11,10 @@ PYTEST     := $(UV) run pytest
 RUFF       := $(UV) run ruff
 PYRIGHT    := $(UV) run pyright
 PRE_COMMIT := $(UV) run pre-commit
+{%- if enable_delivery %}
+DELIVERY   := PYTHONPATH=scripts $(UV) run python -m delivery
+BASE      ?= develop
+{%- endif %}
 
 {%- if use_gcp %}
 
@@ -64,8 +68,128 @@ test:  ## Run pytest with coverage
 format-check:  ## Verify code is formatted (no changes applied)
 	$(RUFF) format --check .
 
+{%- if enable_delivery %}
+
+.PHONY: ci
+ci: lint format-check typecheck test constraints budgets spec-coverage  ## Everything CI runs
+{%- else %}
+
 .PHONY: ci
 ci: lint format-check typecheck test  ## Run lint + format-check + typecheck + test (matches CI)
+{%- endif %}
+{%- if enable_delivery %}
+
+# ---------------------------------------------------------------------------
+# Delivery checks (deterministic; the same code runs in hooks and CI)
+# ---------------------------------------------------------------------------
+
+.PHONY: constraints
+constraints:  ## Layer contracts and invariants (import-linter + constraints.py)
+	$(UV) run lint-imports
+	$(DELIVERY).constraints
+
+.PHONY: budgets
+budgets:  ## Numeric budgets, AGENTS.md, and orphan constraints
+	$(DELIVERY).budgets
+	$(DELIVERY).budgets --agents-md
+	$(DELIVERY).budgets --constraints
+
+.PHONY: spec-coverage
+spec-coverage:  ## Every living-spec statement has a test
+	$(DELIVERY).spec_coverage
+
+.PHONY: green
+green:  ## Autofix, then every check for the touched members; the stop hook runs this
+	$(RUFF) check --fix . && $(RUFF) format .
+	$(RUFF) check . && $(PYRIGHT)
+	$(DELIVERY).green_runner --base $(BASE)
+	$(DELIVERY).constraints && $(DELIVERY).budgets && $(DELIVERY).spec_coverage
+	$(DELIVERY).hooks record-green
+
+.PHONY: contract
+contract:  ## Dry-run the pull-request contract locally
+	$(DELIVERY).pr_contract $(if $(ITEM),--item $(ITEM),--no-item) --base $(BASE) --signers file:.signers --description $(or $(PR),pr.md)
+
+.PHONY: deploy-surface
+deploy-surface:  ## Nothing from the process is deployable
+	$(DELIVERY).deploy_surface
+
+# ---------------------------------------------------------------------------
+# Delivery workflow (the engineer's commands; make help lists them)
+# ---------------------------------------------------------------------------
+
+.PHONY: start
+start:  ## Begin work: asks what you are here to do (make start TICKET=<key> ANSWER=<key>)
+	$(DELIVERY).start $(if $(ANSWER),--answer $(ANSWER)) $(if $(TICKET),--ticket $(TICKET))
+
+.PHONY: status
+status:  ## Where am I and what is next
+	$(DELIVERY).status
+
+.PHONY: rebuild
+rebuild:  ## Regenerate .work/<ID>/state.json from git and the artifacts
+	@if [ -z "$(ID)" ]; then echo "Usage: make rebuild ID=<work-item>"; exit 1; fi
+	$(DELIVERY).state_cli rebuild $(ID)
+
+.PHONY: accept-prepare
+accept-prepare:  ## (agent) Stage the artifact and write the sign-off message: STAGE=<stage> [ITEM=<id>] [REASON=...]
+	@if [ -z "$(STAGE)" ]; then echo "Usage: make accept-prepare STAGE=<stage>"; exit 1; fi
+	$(DELIVERY).accept --prepare --stage $(STAGE) $(if $(ITEM),--item $(ITEM),$(if $(shell $(DELIVERY).state_cli bound 2>/dev/null),--item $(shell $(DELIVERY).state_cli bound))) $(if $(REASON),--reason "$(REASON)")
+
+.PHONY: accept
+accept:  ## (engineer) Sign the prepared acceptance: STAGE=<stage> [ITEM=<id>]
+	@if [ -z "$(STAGE)" ]; then echo "Usage: make accept STAGE=<stage>"; exit 1; fi
+	$(DELIVERY).accept --sign --stage $(STAGE) $(if $(ITEM),--item $(ITEM),$(if $(shell $(DELIVERY).state_cli bound 2>/dev/null),--item $(shell $(DELIVERY).state_cli bound)))
+
+.PHONY: adopt-branch
+adopt-branch:  ## Bind the current branch to a new work item: make adopt-branch TICKET=<key>
+	$(DELIVERY).start --answer attach $(if $(TICKET),--ticket $(TICKET))
+
+.PHONY: abandon
+abandon:  ## Close the current work item and archive it
+	$(DELIVERY).start --answer abandon
+
+.PHONY: opt-out
+opt-out:  ## Prepare the opt-out record: make opt-out [REASON="..."]; then make accept STAGE=opt-out
+	$(DELIVERY).accept --prepare --stage opt-out $(if $(REASON),--reason "$(REASON)")
+
+.PHONY: amend
+amend:  ## Change an accepted artifact, one criterion at a time (run /amend in Claude Code)
+	@echo "Run /amend in Claude Code; it records the decision and requests re-acceptance of the affected part."
+
+.PHONY: observe
+observe:  ## Record a residual observation (see working/README.md#observations)
+	$(DELIVERY).observe $(ARGS)
+
+.PHONY: loop-report
+loop-report:  ## The improvement-loop report since BASE
+	$(DELIVERY).loop_report --base $(BASE)
+
+# LLM stages have no deterministic equivalent; these stubs point at the slash command.
+.PHONY: intent clarify spec plan red implement diagnose architect decompose review-pr entropy-audit
+intent:  ## LLM stage; run /intent in Claude Code
+	@echo "This stage is LLM work. In Claude Code, run: /intent"
+clarify:  ## LLM stage; run /clarify in Claude Code
+	@echo "This stage is LLM work. In Claude Code, run: /clarify"
+spec:  ## LLM stage; run /spec in Claude Code
+	@echo "This stage is LLM work. In Claude Code, run: /spec"
+plan:  ## LLM stage; run /plan in Claude Code
+	@echo "This stage is LLM work. In Claude Code, run: /plan"
+red:  ## LLM stage; run /red in Claude Code
+	@echo "This stage is LLM work. In Claude Code, run: /red"
+implement:  ## LLM stage; run /implement in Claude Code
+	@echo "This stage is LLM work. In Claude Code, run: /implement"
+diagnose:  ## LLM stage; run /diagnose in Claude Code
+	@echo "This stage is LLM work. In Claude Code, run: /diagnose"
+architect:  ## LLM stage; run /architect in Claude Code
+	@echo "This stage is LLM work. In Claude Code, run: /architect"
+decompose:  ## LLM stage; run /decompose in Claude Code
+	@echo "This stage is LLM work. In Claude Code, run: /decompose"
+review-pr:  ## LLM stage; run /review-pr in Claude Code
+	@echo "This stage is LLM work. In Claude Code, run: /review-pr"
+entropy-audit:  ## LLM stage; run /entropy-audit in Claude Code
+	@echo "This stage is LLM work. In Claude Code, run: /entropy-audit"
+{%- endif %}
 
 # ---------------------------------------------------------------------------
 # App scaffolding

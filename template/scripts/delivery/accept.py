@@ -10,12 +10,15 @@ running sign; the engineer runs it in their own shell.
 from __future__ import annotations
 
 import re
-from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from delivery import gitx, state
 from delivery.block import fail
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 STAGE_FILES: dict[str, list[str]] = {
     "intent": ["intent.md"],

@@ -40,14 +40,12 @@ def load(repo: Path) -> list[Command]:
     if not path.exists():
         return []
     data = tomllib.loads(path.read_text())
-    out: list[Command] = []
-    for entry in data.get("command", []):
-        out.append(
-            Command(
-                str(entry["name"]),
-                str(entry.get("description", "")),
-                str(entry.get("when", "anywhere")),
-                str(entry.get("runner", "both")),
-            )
+    return [
+        Command(
+            str(entry["name"]),
+            str(entry.get("description", "")),
+            str(entry.get("when", "anywhere")),
+            str(entry.get("runner", "both")),
         )
-    return out
+        for entry in data.get("command", [])
+    ]

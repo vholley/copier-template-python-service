@@ -6,11 +6,14 @@ main(["--answer", KEY, "--ticket", ID, repo]) performs one.
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from delivery import gitx, state, status
 from delivery.block import fail
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 ANSWERS = {
     "quick-change": "Make a quick change (typo, docs, config, dependency bump)",

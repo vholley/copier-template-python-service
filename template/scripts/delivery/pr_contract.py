@@ -20,12 +20,15 @@ from __future__ import annotations
 
 import re
 import tempfile
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from delivery import compute_tier, gitx, ordering, paths, signers, spec_check, state
 from delivery.block import fail
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 REQUIRED_SECTIONS = (
     "## Intent",

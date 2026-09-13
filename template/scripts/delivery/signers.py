@@ -24,7 +24,7 @@ def _gh(*args: str) -> str:
     gh = shutil.which("gh")
     if gh is None:
         raise OSError("gh CLI not found")
-    out = subprocess.run([gh, "api", *args], capture_output=True, text=True, check=False)  # noqa: S603
+    out = subprocess.run([gh, "api", *args], capture_output=True, text=True, check=False)
     if out.returncode != 0:
         raise OSError(out.stderr.strip() or "gh api failed")
     return out.stdout
@@ -76,7 +76,7 @@ def write_allowed_signers(keys: dict[str, list[str]], path: Path) -> Path:
 
 def verify_commit(repo: Path, sha: str, allowed: Path) -> bool:
     """True when the commit carries a good SSH signature by a listed principal."""
-    out = subprocess.run(  # noqa: S603
+    out = subprocess.run(
         [
             gitx.GIT,
             "-C",

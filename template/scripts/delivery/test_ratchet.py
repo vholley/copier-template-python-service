@@ -233,12 +233,12 @@ def quality(repo: Path) -> list[str]:
                 and _owner(sub, f) == tf.name
             )
             if pkg:
-                for target in tf.patched:
-                    if target.startswith(pkg + "."):
-                        out.append(
-                            f"{rel}:{tf.line}: TQ-03 test {tf.name} patches {target}, "
-                            f"part of the module under test"
-                        )
+                out.extend(
+                    f"{rel}:{tf.line}: TQ-03 test {tf.name} patches {target}, "
+                    "part of the module under test"
+                    for target in tf.patched
+                    if target.startswith(pkg + ".")
+                )
             if enabled and not tf.anchors:
                 out.append(
                     f"{rel}:{tf.line}: TQ-04 test {tf.name} has no @pytest.mark.spec marker "

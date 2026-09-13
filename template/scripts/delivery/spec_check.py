@@ -82,9 +82,10 @@ def main(argv: list[str]) -> int:
             env=True,
         )
     present = {str(c.get("class")) for c in data.get("criteria", [])}
-    problems: list[str] = []
-    for cls in sorted(table[change_type] - present):
-        problems.append(f"missing required class {cls!r} for change type {change_type!r}")
+    problems: list[str] = [
+        f"missing required class {cls!r} for change type {change_type!r}"
+        for cls in sorted(table[change_type] - present)
+    ]
     for c in data.get("criteria", []):
         cid = str(c.get("id"))
         if c.get("status") == "pass" and not c.get("evidence"):

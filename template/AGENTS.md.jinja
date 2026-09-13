@@ -250,6 +250,7 @@ Use `@pytest.fixture` for shared setup. Mock all external services — never hit
 ```python
 from unittest.mock import patch
 
+
 @patch("my_service.processor.httpx.AsyncClient")
 def test_fetch_data(mock_client) -> None:
     mock_client.return_value.__enter__.return_value.get.return_value.json.return_value = {"id": "1"}
@@ -269,9 +270,12 @@ Coverage target: ~80% on new code. Higher for `libs/shared/` — bugs there affe
 **Parameterize for multiple cases.** Use `@pytest.mark.parametrize` when the same logic needs to be exercised across multiple inputs. This avoids copy-paste test functions that diverge silently and makes covered cases explicit.
 
 ```python
-@pytest.mark.parametrize("status_code,expected", [(401, PortalAuthenticationError), (404, PortalInvoiceNotFoundError)])
-async def test_fetch_invoice_raises_on_error(status_code: int, expected: type[Exception]) -> None:
-    ...
+@pytest.mark.parametrize(
+    "status_code,expected", [(401, PortalAuthenticationError), (404, PortalInvoiceNotFoundError)]
+)
+async def test_fetch_invoice_raises_on_error(
+    status_code: int, expected: type[Exception]
+) -> None: ...
 ```
 
 **Test edge cases explicitly.** A complete test suite covers: the happy path, error and exception paths, boundary conditions (empty collections, `None` inputs, zero values), and auth/permission failures where the code handles them. A suite that only tests the happy path produces a misleading coverage number.
