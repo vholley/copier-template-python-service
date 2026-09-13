@@ -172,3 +172,84 @@ class TestStateBinding:
 
     def test_unbound_branch_returns_none(self, item: Path) -> None:
         assert state.bound_item(item, "feature/x") is None
+
+
+# ------------------------------------------------- state as a cache (C18, design 12.4)
+
+
+class TestStateRebuild:
+    """state.json is derived from git history and artifacts; it can always be rebuilt."""
+
+    def _accept(self, repo: Path, item_id: str, stage: str, filename: str) -> str:
+        """Simulate an accepted artifact: write it, commit with the trailer, return the sha."""
+        path = repo / ".work" / item_id / filename
+        path.write_text(f"# {stage}\n")
+        subprocess.run(["git", "add", "."], cwd=repo, check=True)
+        digest = state.file_hash(path)
+        msg = f"accept(work-{item_id}): {stage}\n\nAccept: {stage} sha256={digest}\nWork-Item: {item_id}\n"
+        subprocess.run(["git", "commit", "-q", "-m", msg], cwd=repo, check=True)
+        return subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True, text=True
+        ).stdout.strip()
+
+    def test_rebuild_from_history_recovers_stage_and_acceptances(self, item: Path) -> None:
+        sha = self._accept(item, "PROJ-1", "intent", "intent.md")
+        (item / ".work/PROJ-1/state.json").unlink()
+        rebuilt = state.rebuild(item, "PROJ-1")
+        assert rebuilt.stage == "clarify"
+        assert rebuilt.accepted["intent"] == sha
+        assert state.read(item, "PROJ-1").stage == "clarify"
+
+    def test_rebuild_repairs_corrupt_file(self, item: Path) -> None:
+        (item / ".work/PROJ-1/state.json").write_text("{not json")
+        state.rebuild(item, "PROJ-1")
+        assert state.read(item, "PROJ-1").stage == "intent"
+
+    def test_derived_stage_follows_artifacts(self, item: Path) -> None:
+        self._accept(item, "PROJ-1", "intent", "intent.md")
+        (item / ".work/PROJ-1/clarify.md").write_text("# clarify\n")
+        (item / ".work/PROJ-1/spec.md").write_text("# spec\n")
+        assert state.derive_stage(item, "PROJ-1") == "spec"  # spec drafted, not yet accepted
+        self._accept(item, "PROJ-1", "spec", "spec.md")
+        assert state.derive_stage(item, "PROJ-1") == "plan"
+
+    def test_read_reports_artifact_changed_since_acceptance(self, item: Path) -> None:
+        self._accept(item, "PROJ-1", "intent", "intent.md")
+        state.rebuild(item, "PROJ-1")
+        (item / ".work/PROJ-1/intent.md").write_text("# edited after acceptance\n")
+        with pytest.raises(state.ConsistencyError) as exc:
+            state.read(item, "PROJ-1")
+        assert "intent.md changed since Accept: intent" in str(exc.value)
+        assert "make accept STAGE=intent" in str(exc.value)
+
+    def test_read_reports_missing_branch(self, item: Path) -> None:
+        subprocess.run(["git", "checkout", "-q", "develop"], cwd=item, check=True)
+        subprocess.run(["git", "branch", "-m", "PROJ-1", "renamed"], cwd=item, check=True)
+        subprocess.run(["git", "checkout", "-q", "renamed"], cwd=item, check=True)
+        with pytest.raises(state.ConsistencyError) as exc:
+            state.read(item, "PROJ-1")
+        assert "branch PROJ-1 not found" in str(exc.value)
+        assert "make adopt-branch PROJ-1" in str(exc.value)
+
+    def test_read_reports_uncommitted_stage_advance(self, item: Path) -> None:
+        state.advance(item, "PROJ-1", "clarify", force=True)  # not committed
+        report = state.check(item, "PROJ-1")
+        assert any("commit .work/PROJ-1/state.json" in line for line in report)
+
+    def test_two_items_on_one_branch_is_refused(self, item: Path) -> None:
+        state.create(item, "PROJ-2", "change", "PROJ-1")
+        with pytest.raises(state.ConsistencyError, match="more than one item"):
+            state.bound_item(item, "PROJ-1")
+
+    def test_write_is_atomic(self, item: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        path = item / ".work/PROJ-1/state.json"
+        before = path.read_text()
+
+        def boom(*_args: object, **_kw: object) -> None:
+            raise OSError("disk full")
+
+        monkeypatch.setattr(state, "_replace", boom)
+        with pytest.raises(OSError):
+            state.advance(item, "PROJ-1", "clarify", force=True)
+        assert path.read_text() == before
+        assert not list((item / ".work/PROJ-1").glob("*.tmp"))
