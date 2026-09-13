@@ -155,7 +155,8 @@ def _compare(path: str, base: dict[str, TestFn], head: dict[str, TestFn]) -> lis
         newly_skipped = h.skipped - b.skipped
         if newly_skipped:
             out.append(
-                f"{path}:{h.line}: RATCHET-04 {label}: {sorted(newly_skipped)[0]} gained a skip/xfail marker"
+                f"{path}:{h.line}: RATCHET-04 {label}: {sorted(newly_skipped)[0]} "
+                "gained a skip/xfail marker"
             )
         weakened = False
         for (left, op), n in b.atoms.items():
