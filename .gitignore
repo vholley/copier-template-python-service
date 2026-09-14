@@ -1,3 +1,10 @@
+# Python build artifacts
+__pycache__/
+*.py[cod]
+.ruff_cache/
+.pytest_cache/
+.venv/
+
 # Local copier test outputs
 /tmp/
 
