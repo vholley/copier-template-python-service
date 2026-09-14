@@ -25,12 +25,22 @@ TELLS: list[tuple[str, re.Pattern[str], str]] = [
     ("WRITING-01", re.compile(r"—"), "em-dash; use a comma, colon, or a new sentence"),
     (
         "WRITING-02",
-        re.compile(r"\b(isn't|is not|not) (just|merely|only) [^.]{1,80}?\b(it's|it is|but)\b", re.I),
+        re.compile(
+            r"\b(isn't|is not|not) (just|merely|only) [^.]{1,80}?\b(it's|it is|but)\b", re.I
+        ),
         "negative parallelism (not just X, it's Y); state the claim",
     ),
     ("WRITING-03", re.compile(rf"\b({_VOCAB})\b", re.I), "AI-tell vocabulary; use the plain word"),
-    ("WRITING-04", re.compile(r"\b(serves as|stands as|represents a|marks a)\b", re.I), "pompous copula; use 'is'"),
-    ("WRITING-05", re.compile(r"^\s*[^#\n]{0,60}\?\s*$"), "a question the text answers itself; state the answer"),
+    (
+        "WRITING-04",
+        re.compile(r"\b(serves as|stands as|represents a|marks a)\b", re.I),
+        "pompous copula; use 'is'",
+    ),
+    (
+        "WRITING-05",
+        re.compile(r"^\s*[^#\n]{0,60}\?\s*$"),
+        "a question the text answers itself; state the answer",
+    ),
     ("WRITING-06", re.compile(rf"\b({_BRIDGES})\b", re.I), "filler bridge; delete it"),
     (
         "WRITING-07",
