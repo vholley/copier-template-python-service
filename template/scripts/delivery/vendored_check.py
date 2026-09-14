@@ -21,7 +21,21 @@ def digest(directory: Path) -> str:
 
 
 def main(argv: list[str]) -> int:
-    """Entry point: [repo]."""
+    """Entry point: [repo] | --digest <skill-dir>.
+
+    --digest prints the value to paste into .claude/VENDORED.md after re-vendoring.
+    """
+    if argv and argv[0] == "--digest":
+        if len(argv) < 2:
+            return fail(
+                "vendored",
+                "--digest needs a skill directory",
+                "the digest covers one vendored skill",
+                ["python -m delivery.vendored_check --digest .claude/skills/<name>"],
+                "working/README.md#skills",
+            )
+        print(digest(Path(argv[1])))
+        return 0
     repo = Path(argv[0]) if argv else Path.cwd()
     path = repo / VENDORED
     if not path.exists():
