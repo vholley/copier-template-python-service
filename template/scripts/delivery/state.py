@@ -267,7 +267,7 @@ def check(repo: Path, item_id: str) -> list[str]:
     report.extend(accepted_file_problems(repo, item_id))
     if not gitx.branch_exists(repo, st.branch):
         report.append(f"branch {st.branch} not found. NEXT: make adopt-branch {item_id}")
-    rel = str(_state_path(repo, item_id).relative_to(repo))
+    rel = _state_path(repo, item_id).relative_to(repo).as_posix()
     if not gitx.is_clean(repo, rel):
         report.append(f"state.json has uncommitted changes. NEXT: commit {rel}")
     derived = derive_stage(repo, item_id)

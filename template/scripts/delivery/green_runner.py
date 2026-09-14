@@ -34,14 +34,37 @@ def test_command(member: Path) -> list[str]:
     return m.group(1).split() if m else ["uv", "run", "pytest", str(member)]
 
 
+def _changed_paths(repo: Path, base: str) -> list[str]:
+    """Paths touched since base, as posix, including uncommitted ones.
+
+    `git status --porcelain` emits "XY path", so splitting on whitespace turns the
+    status codes into path entries and breaks any path containing a space.
+    """
+    out = [
+        line.strip()
+        for line in gitx.run(repo, "diff", "--name-only", base, "HEAD", check=False).splitlines()
+        if line.strip()
+    ]
+    for line in gitx.run(repo, "status", "--porcelain", check=False).splitlines():
+        if len(line) < 4:
+            continue
+        path = line[3:].strip().strip('"')
+        # Renames are reported as "old -> new"; the new path is what changed.
+        if " -> " in path:
+            path = path.split(" -> ", 1)[1]
+        out.append(path)
+    return out
+
+
 def main(argv: list[str]) -> int:
     """Entry point."""
     base = argv[argv.index("--base") + 1] if "--base" in argv else "develop"
     repo = Path.cwd()
-    changed = gitx.run(repo, "diff", "--name-only", base, "HEAD", check=False).split()
-    changed += gitx.run(repo, "status", "--porcelain", check=False).split()
+    changed = _changed_paths(repo, base)
     enabled = members(repo)
-    selected = [m for m in enabled if any(c.startswith(str(m.relative_to(repo))) for c in changed)]
+    selected = [
+        m for m in enabled if any(c.startswith(m.relative_to(repo).as_posix()) for c in changed)
+    ]
     selected = selected or enabled
     if not selected:
         print("no enabled members; nothing to run")

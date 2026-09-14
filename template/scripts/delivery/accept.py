@@ -164,9 +164,11 @@ def _staged_hashes_match(repo: Path, d: Path, msg: str) -> bool:
     have = [state.accept_hash(d / f) for f in files if (d / f).exists()]
     if want != have:
         return False
-    staged = gitx.run(repo, "diff", "--cached", "--name-only").split()
-    prefix = str(d.relative_to(repo)) + "/"
-    return bool(staged) and all(s.startswith(prefix) for s in staged)
+    # git reports forward slashes on every platform, and splitlines keeps paths
+    # that contain spaces in one piece.
+    staged = gitx.run(repo, "diff", "--cached", "--name-only").splitlines()
+    prefix = d.relative_to(repo).as_posix() + "/"
+    return bool(staged) and all(s.strip().startswith(prefix) for s in staged if s.strip())
 
 
 def sign(repo: Path, item: str | None, stage: str) -> int:
