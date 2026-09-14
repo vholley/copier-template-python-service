@@ -75,6 +75,12 @@ when = "anywhere"
 runner = "both"
 
 [[command]]
+name = "log"
+description = "Record an issue and the definition it exposed: WHAT=... MISSING=... [FIX=...]"
+when = "anywhere"
+runner = "both"
+
+[[command]]
 name = "rebuild"
 description = "Regenerate .work/<ID>/state.json from git and the artifacts"
 when = "anywhere"

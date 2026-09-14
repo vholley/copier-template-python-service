@@ -151,6 +151,13 @@ Something wrong that no written rule covers is an observation, recorded with
 recorded; observed ones are bugs (`make start`); inferred ones expire at the
 next weekly audit unless they become work.
 
+## The issue log {#log}
+
+`working/log.md` is the running record of what went wrong and what definition
+was missing: `make log WHAT="..." MISSING="..." [FIX="..."]`. Entries close
+once. The weekly audit lists the open ones. Read it before writing a rule: the
+failure it addresses is probably already there.
+
 ## Decisions {#decisions}
 
 Every decision the agent makes is written in `.work/<id>/decisions.md` with what

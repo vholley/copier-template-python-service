@@ -427,3 +427,21 @@ class TestHumanFacingDocs:
         (delivery_copy / "seeded.md").write_text("This isn't just a tool — it's a paradigm shift that will delve into a rich tapestry of workflows.\n")
         r = subprocess.run(["python3", "-m", "delivery.writing_check", "seeded.md"], cwd=delivery_copy, env=env, capture_output=True, text=True)
         assert r.returncode == 1 and "seeded.md" in r.stdout
+
+
+class TestIssueLog:
+    """D42: working/log.md and make log."""
+
+    def test_log_file_and_target_exist(self, delivery_project: Path) -> None:
+        assert (delivery_project / "working/log.md").exists()
+        assert _re.search(r"^log:", (delivery_project / "Makefile").read_text(), _re.M)
+
+    def test_add_close_open(self, delivery_copy: Path) -> None:
+        env = {**__import__("os").environ, "PYTHONPATH": "scripts"}
+        run = lambda *a: subprocess.run(["python3", "-m", "delivery.log", *a], cwd=delivery_copy, env=env, capture_output=True, text=True)  # noqa: E731
+        assert run("add", "--source", "CI", "--what", "x", "--missing", "y").returncode == 0
+        assert run("open").returncode == 1
+        assert run("close", "L-1", "--fix", "z").returncode == 0
+        assert run("open").returncode == 0
+        text = (delivery_copy / "working/log.md").read_text()
+        assert "## L-1" in text and "· closed" in text and "Fix: z" in text
