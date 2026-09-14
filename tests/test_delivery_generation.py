@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from tests.conftest import BASE_ANSWERS, TEMPLATE, generate
+from tests.conftest import BASE_ANSWERS, PYTHON, TEMPLATE, generate, require_bash, require_make
 from copier import run_copy
 
 DELIVERY_ONLY_PATHS = [
@@ -257,7 +257,7 @@ class TestMakefile:
         assert m and all(t in m.group(1) for t in ("constraints", "budgets", "spec-coverage"))
 
     def test_stage_stubs_print_slash_command(self, delivery_project: Path) -> None:
-        out = subprocess.run(["make", "-s", "intent"], cwd=delivery_project, capture_output=True, text=True, check=False).stdout
+        out = subprocess.run([require_make(), "-s", "intent"], cwd=delivery_project, capture_output=True, text=True, check=False).stdout
         assert "/intent" in out
 
 
@@ -278,8 +278,8 @@ class TestPreCommit:
         bad = delivery_copy / "bad.msg"
         bad.write_text("feat: accept\n\nAccept: intent sha256=" + "a" * 64 + "\n")
         env = {"PYTHONPATH": "scripts"}
-        assert subprocess.run(["python3", str(script), str(good)], cwd=delivery_copy, env={**__import__("os").environ, **env}).returncode == 0
-        assert subprocess.run(["python3", str(script), str(bad)], cwd=delivery_copy, env={**__import__("os").environ, **env}).returncode == 1
+        assert subprocess.run([PYTHON, str(script), str(good)], cwd=delivery_copy, env={**__import__("os").environ, **env}).returncode == 0
+        assert subprocess.run([PYTHON, str(script), str(bad)], cwd=delivery_copy, env={**__import__("os").environ, **env}).returncode == 1
 
 
 class TestPyproject:
@@ -304,10 +304,10 @@ class TestDeployable:
         for entry in (".claude/", ".work/", "working/", "docs/", "scripts/", ".github/", "**/tests/", "*.md"):
             assert entry in text.splitlines(), entry
         env = {**__import__("os").environ, "PYTHONPATH": "scripts"}
-        assert subprocess.run(["python3", "-m", "delivery.deploy_surface", "."], cwd=delivery_copy, env=env).returncode == 0
+        assert subprocess.run([PYTHON, "-m", "delivery.deploy_surface", "."], cwd=delivery_copy, env=env).returncode == 0
         (delivery_copy / "apps/x").mkdir(parents=True)
         (delivery_copy / "apps/x/Dockerfile").write_text("FROM python\nCOPY . .\n")
-        assert subprocess.run(["python3", "-m", "delivery.deploy_surface", "."], cwd=delivery_copy, env=env).returncode == 1
+        assert subprocess.run([PYTHON, "-m", "delivery.deploy_surface", "."], cwd=delivery_copy, env=env).returncode == 1
 
 
 # ---------------------------------------------------------------- S9 (C06, C14, C15, C36)
@@ -356,7 +356,7 @@ class TestAgentsMd:
 
     def test_agents_md_passes_budget_check(self, delivery_copy: Path) -> None:
         env = {**_os.environ, "PYTHONPATH": "scripts"}
-        r = subprocess.run(["python3", "-m", "delivery.budgets", "--agents-md", "."], cwd=delivery_copy, env=env, capture_output=True, text=True)
+        r = subprocess.run([PYTHON, "-m", "delivery.budgets", "--agents-md", "."], cwd=delivery_copy, env=env, capture_output=True, text=True)
         assert r.returncode == 0, r.stdout + r.stderr
 
     def test_agents_md_states_the_core_rules(self, delivery_project: Path) -> None:
@@ -380,7 +380,7 @@ class TestMigration:
         subprocess.run(["git", "init", "-q"], cwd=old, check=True)
         (old / "Makefile").write_text((old / "Makefile").read_text() + "\ncustom:\n\techo hi\n")
         script = delivery_project / "scripts/migrate-to-delivery.sh"
-        r = subprocess.run(["bash", str(script), "--from", str(delivery_project)], cwd=old, capture_output=True, text=True)
+        r = subprocess.run([require_bash(), str(script), "--from", str(delivery_project)], cwd=old, capture_output=True, text=True)
         assert r.returncode == 0, r.stderr
         assert (old / "working/standards/budgets.md").exists()
         assert "Makefile" in r.stdout and "modified" in r.stdout
@@ -396,7 +396,7 @@ class TestHumanFacingDocs:
 
     def test_writing_check_passes(self, delivery_copy: Path) -> None:
         env = {**_os.environ, "PYTHONPATH": "scripts"}
-        r = subprocess.run(["python3", "-m", "delivery.writing_check", "README.md", "docs/RATIONALE.md", "docs/DELIVERY-SYSTEM.md", "working/README.md", "AGENTS.md"],
+        r = subprocess.run([PYTHON, "-m", "delivery.writing_check", "README.md", "docs/RATIONALE.md", "docs/DELIVERY-SYSTEM.md", "working/README.md", "AGENTS.md"],
                            cwd=delivery_copy, env=env, capture_output=True, text=True)
         assert r.returncode == 0, r.stdout + r.stderr
 
@@ -449,7 +449,7 @@ class TestAgentsMd:
 
     def test_agents_md_passes_budgets_check(self, delivery_copy: Path) -> None:
         env = {**__import__("os").environ, "PYTHONPATH": "scripts"}
-        r = subprocess.run(["python3", "-m", "delivery.budgets", "--agents-md", "."], cwd=delivery_copy, env=env, capture_output=True, text=True)
+        r = subprocess.run([PYTHON, "-m", "delivery.budgets", "--agents-md", "."], cwd=delivery_copy, env=env, capture_output=True, text=True)
         assert r.returncode == 0, r.stdout + r.stderr
 
     def test_claude_md_is_pointer(self, delivery_project: Path) -> None:
@@ -473,7 +473,7 @@ class TestMigration:
         subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@x", "commit", "-q", "-m", "init"], cwd=old, check=True)
         (old / "Makefile").write_text((old / "Makefile").read_text() + "\n# local edit\n")
         script = delivery_project / "scripts/migrate-to-delivery.sh"
-        r = subprocess.run(["bash", str(script), "--from", str(delivery_project)], cwd=old, capture_output=True, text=True)
+        r = subprocess.run([require_bash(), str(script), "--from", str(delivery_project)], cwd=old, capture_output=True, text=True)
         assert r.returncode == 0, r.stderr
         assert (old / "working/standards/budgets.md").exists()
         assert "Makefile" in r.stdout and "modified" in r.stdout
@@ -493,13 +493,13 @@ class TestHumanFacingDocs:
     def test_writing_check_clean(self, delivery_copy: Path) -> None:
         env = {**__import__("os").environ, "PYTHONPATH": "scripts"}
         files = ["README.md", "working/README.md", "docs/RATIONALE.md", "docs/DEVELOPING.md", "docs/DELIVERY-SYSTEM.md", "AGENTS.md"]
-        r = subprocess.run(["python3", "-m", "delivery.writing_check", *files], cwd=delivery_copy, env=env, capture_output=True, text=True)
+        r = subprocess.run([PYTHON, "-m", "delivery.writing_check", *files], cwd=delivery_copy, env=env, capture_output=True, text=True)
         assert r.returncode == 0, r.stdout
 
     def test_writing_check_finds_seeded_tells(self, delivery_copy: Path) -> None:
         env = {**__import__("os").environ, "PYTHONPATH": "scripts"}
         (delivery_copy / "seeded.md").write_text("This isn't just a tool — it's a paradigm shift that will delve into a rich tapestry of workflows.\n")
-        r = subprocess.run(["python3", "-m", "delivery.writing_check", "seeded.md"], cwd=delivery_copy, env=env, capture_output=True, text=True)
+        r = subprocess.run([PYTHON, "-m", "delivery.writing_check", "seeded.md"], cwd=delivery_copy, env=env, capture_output=True, text=True)
         assert r.returncode == 1 and "seeded.md" in r.stdout
 
 
@@ -512,7 +512,7 @@ class TestIssueLog:
 
     def test_add_close_open(self, delivery_copy: Path) -> None:
         env = {**__import__("os").environ, "PYTHONPATH": "scripts"}
-        run = lambda *a: subprocess.run(["python3", "-m", "delivery.log", *a], cwd=delivery_copy, env=env, capture_output=True, text=True)  # noqa: E731
+        run = lambda *a: subprocess.run([PYTHON, "-m", "delivery.log", *a], cwd=delivery_copy, env=env, capture_output=True, text=True)  # noqa: E731
         assert run("add", "--source", "CI", "--what", "x", "--missing", "y").returncode == 0
         assert run("open").returncode == 1
         assert run("close", "L-1", "--fix", "z").returncode == 0
@@ -584,7 +584,7 @@ class TestClaudeDir:
         assert (delivery_copy / ".claude/skills/deslop/references/ai-writing-tells.md").exists()
         assert "deslop" in (delivery_copy / ".claude/VENDORED.md").read_text()
         env = {**__import__("os").environ, "PYTHONPATH": "scripts"}
-        assert subprocess.run(["python3", "-m", "delivery.vendored_check", "."], cwd=delivery_copy, env=env).returncode == 0
+        assert subprocess.run([PYTHON, "-m", "delivery.vendored_check", "."], cwd=delivery_copy, env=env).returncode == 0
 
     def test_ruff_remediation_rule_exists(self, delivery_project: Path) -> None:
         text = (delivery_project / ".claude/rules/ruff-remediation.md").read_text()
@@ -592,7 +592,7 @@ class TestClaudeDir:
 
     def test_registry_help_check_passes(self, delivery_copy: Path) -> None:
         env = {**__import__("os").environ, "PYTHONPATH": "scripts"}
-        r = subprocess.run(["python3", "-m", "delivery.help", "--check", "."], cwd=delivery_copy, env=env, capture_output=True, text=True)
+        r = subprocess.run([PYTHON, "-m", "delivery.help", "--check", "."], cwd=delivery_copy, env=env, capture_output=True, text=True)
         assert r.returncode == 0, r.stdout
 
 
@@ -604,7 +604,7 @@ class TestScriptsUsage:
         modules = sorted(p.stem for p in (delivery_copy / "scripts/delivery").glob("*.py") if not p.stem.startswith("_"))
         assert len(modules) >= 25
         for m in modules:
-            r = subprocess.run(["python3", "-m", "delivery", m, "--help"], cwd=delivery_copy, env=env, capture_output=True, text=True)
+            r = subprocess.run([PYTHON, "-m", "delivery", m, "--help"], cwd=delivery_copy, env=env, capture_output=True, text=True)
             assert r.returncode == 0 and r.stdout.strip(), m
 
 
@@ -650,7 +650,7 @@ class TestNewApp:
 
     def test_new_app_is_compliant(self, delivery_copy: Path) -> None:
         subprocess.run(["git", "init", "-q", "-b", "develop"], cwd=delivery_copy, check=True)
-        r = subprocess.run(["bash", "scripts/new-app.sh", "worker"], cwd=delivery_copy, capture_output=True, text=True)
+        r = subprocess.run([require_bash(), "scripts/new-app.sh", "worker"], cwd=delivery_copy, capture_output=True, text=True)
         assert r.returncode == 0, r.stderr
         member = delivery_copy / "apps/worker"
         py = (member / "pyproject.toml").read_text()
@@ -667,9 +667,9 @@ class TestNewApp:
 
     def test_new_app_then_ci_passes(self, delivery_copy: Path) -> None:
         subprocess.run(["git", "init", "-q", "-b", "develop"], cwd=delivery_copy, check=True)
-        subprocess.run(["bash", "scripts/new-app.sh", "worker"], cwd=delivery_copy, check=True, capture_output=True)
+        subprocess.run([require_bash(), "scripts/new-app.sh", "worker"], cwd=delivery_copy, check=True, capture_output=True)
         subprocess.run(["uv", "sync", "--quiet"], cwd=delivery_copy, check=True)
         subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@x", "add", "-A"], cwd=delivery_copy, check=True)
         subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@x", "commit", "-q", "-m", "init"], cwd=delivery_copy, check=True)
-        r = subprocess.run(["make", "ci"], cwd=delivery_copy, capture_output=True, text=True)
+        r = subprocess.run([require_make(), "ci"], cwd=delivery_copy, capture_output=True, text=True)
         assert r.returncode == 0, (r.stdout + r.stderr)[-3000:]
