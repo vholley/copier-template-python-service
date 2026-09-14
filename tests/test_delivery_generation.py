@@ -378,7 +378,8 @@ class TestAgentsMd:
         assert r.returncode == 0, r.stdout + r.stderr
 
     def test_claude_md_is_pointer(self, delivery_project: Path) -> None:
-        assert (delivery_project / "CLAUDE.md").read_text().strip() == "@AGENTS.md"
+        lines = [ln for ln in (delivery_project / "CLAUDE.md").read_text().splitlines() if ln.strip() and not ln.startswith("#")]
+        assert lines == ["@AGENTS.md"]  # the template's heading line is allowed; nothing else is
 
 
 class TestMigration:
