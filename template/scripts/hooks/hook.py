@@ -13,9 +13,10 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+# scripts/ must be on the path before the delivery package can be imported.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from delivery import hooks  # noqa: E402  (sys.path must be set before the import)
+from delivery import hooks
 
 if __name__ == "__main__":
     sys.exit(hooks.main(sys.argv[1:]))
