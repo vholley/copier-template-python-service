@@ -662,15 +662,29 @@ class TestCopierUpdate:
         from copier import run_update
 
         tpl = tmp_path / "tpl"
-        _shutil.copytree(TEMPLATE, tpl, ignore=_shutil.ignore_patterns(".venv", ".git"))
+        # Caches are written by this very pytest session, so copying them races with
+        # the run and drags stale bytecode into the fixture template.
+        _shutil.copytree(
+            TEMPLATE,
+            tpl,
+            ignore=_shutil.ignore_patterns(
+                ".venv", ".git", "__pycache__", ".ruff_cache", ".pytest_cache", "tmp"
+            ),
+        )
         subprocess.run(["git", "init", "-q"], cwd=tpl, check=True)
-        g = ["git", "-c", "user.name=t", "-c", "user.email=t@x"]
+        # gc.auto=0: a commit can detach a background `git gc`, which packs and prunes
+        # loose objects. copier then clones this repo, and the clone enumerates
+        # .git/objects/<xx>/ and copies each entry -- if gc removed one in between, the
+        # clone dies with "failed to copy file to ...: No such file or directory".
+        g = ["git", "-c", "user.name=t", "-c", "user.email=t@x", "-c", "gc.auto=0"]
+        subprocess.run([*g, "config", "gc.auto", "0"], cwd=tpl, check=True)
         subprocess.run([*g, "add", "-A"], cwd=tpl, check=True)
         subprocess.run([*g, "commit", "-q", "-m", "v1"], cwd=tpl, check=True)
-        subprocess.run(["git", "tag", "v1.0.0"], cwd=tpl, check=True)
+        subprocess.run([*g, "tag", "v1.0.0"], cwd=tpl, check=True)
         project = tmp_path / "proj"
         run_copy(str(tpl), str(project), data={**BASE_ANSWERS, "enable_delivery": True}, defaults=True, unsafe=True, quiet=True)
         subprocess.run(["git", "init", "-q"], cwd=project, check=True)
+        subprocess.run([*g, "config", "gc.auto", "0"], cwd=project, check=True)
         subprocess.run([*g, "add", "-A"], cwd=project, check=True)
         subprocess.run([*g, "commit", "-q", "-m", "generated"], cwd=project, check=True)
         (project / "working/spec/core.md").write_text("# Core\nproject-owned\n")
@@ -680,7 +694,7 @@ class TestCopierUpdate:
         script = tpl / "template/scripts/delivery/block.py"
         script.write_text(script.read_text() + "\n# upstream change\n")
         subprocess.run([*g, "commit", "-qam", "v2"], cwd=tpl, check=True)
-        subprocess.run(["git", "tag", "v1.1.0"], cwd=tpl, check=True)
+        subprocess.run([*g, "tag", "v1.1.0"], cwd=tpl, check=True)
         run_update(str(project), defaults=True, overwrite=True, unsafe=True, quiet=True, skip_answered=True)
         assert (project / "working/spec/core.md").read_text() == "# Core\nproject-owned\n"
         assert (project / "working/architecture/constraints.md").read_text() == "# mine\n"
