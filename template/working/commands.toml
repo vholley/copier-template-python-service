@@ -1,0 +1,153 @@
+# Every command the process offers, declared once (D31). `make help`, the slash
+# commands' descriptions, working/README.md, and `make status` are generated from it.
+# runner: agent | human | both.  when: anywhere | front-stage | build | defects | review
+
+[[command]]
+name = "start"
+description = "Begin work: asks what you are here to do"
+when = "anywhere"
+runner = "both"
+
+[[command]]
+name = "status"
+description = "Where am I and what is next"
+when = "anywhere"
+runner = "both"
+
+[[command]]
+name = "help"
+description = "Every command, grouped by when it applies"
+when = "anywhere"
+runner = "both"
+
+[[command]]
+name = "green"
+description = "Autofix, then lint, types, tests, and checks for the touched members"
+when = "anywhere"
+runner = "both"
+
+[[command]]
+name = "ci"
+description = "Everything CI runs, for the whole workspace"
+when = "anywhere"
+runner = "both"
+
+[[command]]
+name = "opt-out"
+description = "Leave the process for this branch (you sign the acknowledgment)"
+when = "anywhere"
+runner = "both"
+
+[[command]]
+name = "abandon"
+description = "Close the current work item and archive it"
+when = "anywhere"
+runner = "human"
+
+[[command]]
+name = "amend"
+description = "Change an accepted artifact, one criterion at a time"
+when = "anywhere"
+runner = "both"
+
+[[command]]
+name = "intent"
+description = "Write intent.md: what, why, constraints, non-goals, done"
+when = "front-stage"
+runner = "agent"
+
+[[command]]
+name = "clarify"
+description = "Find contradictions and the questions that must be answered before building"
+when = "front-stage"
+runner = "agent"
+
+[[command]]
+name = "spec"
+description = "Write spec.md and criteria.json: what will be true when this is done"
+when = "front-stage"
+runner = "agent"
+
+[[command]]
+name = "accept"
+description = "Sign a prepared acceptance (you run this in your own shell)"
+when = "front-stage"
+runner = "human"
+
+[[command]]
+name = "accept-prepare"
+description = "Stage the artifact and write the sign-off message for you to sign"
+when = "front-stage"
+runner = "agent"
+
+[[command]]
+name = "adopt-branch"
+description = "Bind the current branch to a new work item"
+when = "front-stage"
+runner = "both"
+
+[[command]]
+name = "plan"
+description = "Interfaces and ordered steps, each mapped to criteria"
+when = "build"
+runner = "agent"
+
+[[command]]
+name = "red"
+description = "One failing test per criterion, committed before any implementation"
+when = "build"
+runner = "agent"
+
+[[command]]
+name = "implement"
+description = "One plan step at a time; make green after each"
+when = "build"
+runner = "agent"
+
+[[command]]
+name = "contract"
+description = "Dry-run the pull-request contract locally"
+when = "build"
+runner = "both"
+
+[[command]]
+name = "rebuild"
+description = "Regenerate a work item's state.json from git and the artifacts"
+when = "build"
+runner = "both"
+
+[[command]]
+name = "diagnose"
+description = "Reproduce, gather evidence, confirm the cause before any fix"
+when = "defects"
+runner = "agent"
+
+[[command]]
+name = "review-pr"
+description = "Run the read-only reviewer agents on a pull request"
+when = "review"
+runner = "agent"
+
+[[command]]
+name = "architect"
+description = "New project: architecture, constraints, standards, budgets"
+when = "front-stage"
+runner = "agent"
+
+[[command]]
+name = "decompose"
+description = "New project: the initial living spec and the first work items"
+when = "front-stage"
+runner = "agent"
+
+[[command]]
+name = "entropy-audit"
+description = "Weekly: drift between docs, constraints, and code; expired observations"
+when = "review"
+runner = "agent"
+
+[[command]]
+name = "new-app"
+description = "Scaffold a new app with its layers, spec skeleton, and delivery settings"
+when = "anywhere"
+runner = "both"

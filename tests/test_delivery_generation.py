@@ -134,6 +134,7 @@ class TestGitignore:
 # ------------------------------------------------------------------- S8 (C09 to C12, C16)
 
 import re as _re
+import shutil
 
 import yaml as _yaml
 
@@ -323,3 +324,101 @@ class TestHumanFacingDocs:
         r = subprocess.run(["python3", "-m", "delivery.writing_check", "README.md", "docs/RATIONALE.md", "docs/DELIVERY-SYSTEM.md", "working/README.md", "AGENTS.md"],
                            cwd=delivery_copy, env=env, capture_output=True, text=True)
         assert r.returncode == 0, r.stdout + r.stderr
+
+
+# ---------------------------------------------------------------- S9 (C06, C14, C15, C36)
+
+
+class TestLayout:
+    """C06: working/ tracked with every listed file; docs/ ignored with the reference docs."""
+
+    WORKING = [
+        "README.md", "commands.toml", "architecture/overview.md", "architecture/constraints.md",
+        "architecture/constraints-baseline.txt", "architecture/decisions/README.md", "spec/README.md",
+        "standards/model-facing.md", "standards/human-facing.md", "standards/criteria-templates.md",
+        "standards/budgets.md", "observations.md", "history/.gitkeep",
+    ]
+    DOCS = ["CONVENTIONS.md", "DEVELOPING.md", "RATIONALE.md", "SETUP.md", "DELIVERY-SYSTEM.md", "workflow.mermaid"]
+
+    def test_working_files(self, delivery_project: Path) -> None:
+        for f in self.WORKING:
+            assert (delivery_project / "working" / f).exists(), f
+
+    def test_docs_files(self, delivery_project: Path) -> None:
+        for f in self.DOCS:
+            assert (delivery_project / "docs" / f).exists(), f
+
+    def test_readme_starts_with_the_split_and_has_command_table(self, delivery_project: Path) -> None:
+        text = (delivery_project / "working/README.md").read_text()
+        head = "\n".join(text.splitlines()[:12])
+        assert "docs/" in head and "working/" in head
+        for cmd in ("make start", "make status", "make help", "make accept", "make opt-out"):
+            assert cmd in text, cmd
+        for anchor in ("#start", "#stages", "#signing", "#green", "#contract", "#bounced", "#escalated", "#opt-out", "#observations"):
+            assert _re.search(r"^#+ .*\{" + anchor + r"\}|<a id=\"" + anchor[1:] + r"\"", text, _re.M) or anchor[1:] in text, anchor
+
+    def test_readme_within_budget(self, delivery_project: Path) -> None:
+        n = len((delivery_project / "working/README.md").read_text().splitlines())
+        assert n <= 200
+
+
+class TestAgentsMd:
+    """C14: AGENTS.md short, marked, non-duplicating; CLAUDE.md is the pointer."""
+
+    def test_agents_md_budget_and_marker(self, delivery_project: Path) -> None:
+        text = (delivery_project / "AGENTS.md").read_text()
+        assert len(text.splitlines()) < 150
+        assert "<!-- managed:end -->" in text
+        for needle in ("make green", "/start", "make status", "working/README.md", "opt-out", "decisions.md"):
+            assert needle in text, needle
+
+    def test_agents_md_passes_budgets_check(self, delivery_copy: Path) -> None:
+        env = {**__import__("os").environ, "PYTHONPATH": "scripts"}
+        r = subprocess.run(["python3", "-m", "delivery.budgets", "--agents-md", "."], cwd=delivery_copy, env=env, capture_output=True, text=True)
+        assert r.returncode == 0, r.stdout + r.stderr
+
+    def test_claude_md_is_pointer(self, delivery_project: Path) -> None:
+        assert (delivery_project / "CLAUDE.md").read_text().strip() == "@AGENTS.md"
+
+
+class TestMigration:
+    """C15: MIGRATION.md and the migration script on a project from the base template."""
+
+    def test_migration_doc_exists(self, delivery_project: Path) -> None:
+        text = (delivery_project / "MIGRATION.md").read_text()
+        for needle in ("working/", "Makefile", "AGENTS.md", "migrate-to-delivery.sh"):
+            assert needle in text, needle
+
+    def test_migration_script_creates_working_and_reports(self, plain_project: Path, delivery_project: Path, tmp_path: Path) -> None:
+        old = tmp_path / "old"
+        shutil.copytree(plain_project, old)
+        (old / "Makefile").write_text((old / "Makefile").read_text() + "\n# local edit\n")
+        script = delivery_project / "scripts/migrate-to-delivery.sh"
+        r = subprocess.run(["bash", str(script), "--from", str(delivery_project)], cwd=old, capture_output=True, text=True)
+        assert r.returncode == 0, r.stderr
+        assert (old / "working/standards/budgets.md").exists()
+        assert "Makefile" in r.stdout and "modified" in r.stdout
+
+
+class TestHumanFacingDocs:
+    """C36: README and RATIONALE describe the scaffold; the writing check finds no tells."""
+
+    def test_readme_and_rationale_mention_the_system(self, delivery_project: Path) -> None:
+        assert "working/" in (delivery_project / "README.md").read_text()
+        assert "delivery" in (delivery_project / "docs/RATIONALE.md").read_text().lower()
+
+    def test_developing_explains_the_makefile(self, delivery_project: Path) -> None:
+        text = (delivery_project / "docs/DEVELOPING.md").read_text()
+        assert "## The Makefile" in text and "make help" in text
+
+    def test_writing_check_clean(self, delivery_copy: Path) -> None:
+        env = {**__import__("os").environ, "PYTHONPATH": "scripts"}
+        files = ["README.md", "working/README.md", "docs/RATIONALE.md", "docs/DEVELOPING.md", "docs/DELIVERY-SYSTEM.md", "AGENTS.md"]
+        r = subprocess.run(["python3", "-m", "delivery.writing_check", *files], cwd=delivery_copy, env=env, capture_output=True, text=True)
+        assert r.returncode == 0, r.stdout
+
+    def test_writing_check_finds_seeded_tells(self, delivery_copy: Path) -> None:
+        env = {**__import__("os").environ, "PYTHONPATH": "scripts"}
+        (delivery_copy / "seeded.md").write_text("This isn't just a tool — it's a paradigm shift that will delve into a rich tapestry of workflows.\n")
+        r = subprocess.run(["python3", "-m", "delivery.writing_check", "seeded.md"], cwd=delivery_copy, env=env, capture_output=True, text=True)
+        assert r.returncode == 1 and "seeded.md" in r.stdout

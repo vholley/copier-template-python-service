@@ -1,0 +1,184 @@
+# The Quality-First AI Delivery System: What It Is and Why
+
+A summary of the system, the thinking behind it, and the reasons for its main decisions. Written for an engineer who has not read the design document or the testing plan and wants to understand what they are joining before they read the mechanics.
+
+---
+
+## 1. The problem
+
+AI coding agents write code faster than teams can trust it. That is the whole problem, and it has several faces that showed up repeatedly in our own work:
+
+- An engineer describes a task and the agent builds something else. The description was clear to the engineer and ambiguous to the model, and the model resolved the ambiguity silently.
+- The agent makes an assumption, the assumption is wrong, and the code is built confidently on top of it.
+- The agent recommends something, the engineer accepts it without understanding what it commits them to, and the consequence appears weeks later.
+- Reviewers cannot keep up. Pull requests are larger, there are more of them, and the reviewer receives a finished diff with no record of how it came to be.
+- Bugs get "fixed" on a plausible cause that nobody verified. The symptom goes away; the cause does not.
+- Asked to find problems, the agent always finds some. The backlog grows without bound and every entry reads as urgent.
+- Nobody can say when a piece of work is done, because the agent can always find one more thing to adjust.
+
+The industry data matches. Teams with heavy AI adoption complete 21% more tasks and merge 98% more pull requests, but review time rises 91%, average request size grows 154%, and organization-level throughput and DORA metrics show no significant improvement [1]. Follow-up telemetry from the same firm across 22,000 developers found 31% more requests merging with no review at all, because reviewer capacity ran out [2]. Requests written by agents wait several times longer for a first reviewer than human-written ones [3]. In a survey of over 200 enterprise technology leaders, 81% reported a rise in production issues tied to AI-generated code while 92% said they were confident the code was production-ready before it shipped [4]. The gap between confidence and correctness is the thing this system exists to close.
+
+## 2. The central idea
+
+Quality is defined before the work, in writing, and everything after that checks against the definition.
+
+That sentence sounds obvious and is not how most teams operate. Most teams define quality implicitly, in the heads of senior engineers, and apply it at review time, after the code exists. That worked when code was expensive to write, because the writing step was slow enough for judgment to keep pace. It fails when an agent can produce a thousand lines in the time it takes a reviewer to read a hundred. Judgment applied after the fact cannot scale to the volume, and judgment applied by the agent to its own work is unreliable in both directions: it misses real problems and it invents new ones. Anthropic's playbook for an AI-native delivery lifecycle reaches the same place from the other direction: once agents write most of the code, planning, review, and testing become the bottleneck, and the answer is a chain of committed artifacts (intent, spec, plan, diff, review findings) where each stage ends by writing one and the next begins by reading it [5].
+
+So the system moves the human's effort to the front. Before code, a human states what is wanted and why, answers the questions that would otherwise become assumptions, accepts each decision with its consequence in front of them, and accepts a specification whose completion criteria are computed by tests. After code, the machinery confirms the criteria were met and a second human confirms the specification was the right one. The reviewer's job shrinks from "is this code good" to "did this solve what was asked, and were the decisions sound." The first question is unbounded; the second is not.
+
+The consequence that takes longest to accept: the system's quality ceiling is the quality of the written definitions. If the team has not written down what it believes about good code, the system cannot enforce it. The first weeks of adoption are spent discovering how much the team believes that it has never written. That is the work the system makes visible.
+
+## 3. Six principles
+
+Everything in the design follows from these. When a situation comes up that the design does not cover, resolve it against them.
+
+### Deterministic before probabilistic
+
+A linter, a structural test, a schema check, or a branch rule gives the same answer every time. An LLM judgment does not. Böckeler's framing on martinfowler.com names these computational and inferential controls and argues both are needed, with the deterministic ones running first [6]. So anything that can be checked mechanically is, and LLM judgment is spent only where mechanical checks cannot reach. No probabilistic control is ever the only gate for something the team needs to trust. This is why the constraint layer is three tools rather than a "reviewer agent," why acceptance is a commit rather than a chat reply, and why the evaluator is a check on evidence rather than a reader of code.
+
+### Human attention is the budget
+
+Code is cheap and parallel; human judgment is serial and expensive. Every stage is designed by asking what the human has to read and whether it is the smallest thing that lets them decide. The intent file is five short sections. The decisions log shows the rejected alternative and the ramification and nothing else. The pull request description is a map of the diff keyed to criteria, not a narrative.
+
+### Durable state lives in files
+
+The agent's context window is temporary and unreliable. Anything that must survive a session, a context compaction, or a handoff is a versioned file with a path. A decision made in chat or in a meeting does not exist until it is written where the agent will read it. OpenAI's team, which built a million-line product over five months with no hand-written code, put it as: from the agent's point of view, anything it cannot access in context effectively does not exist, and only repository-local, versioned artifacts are visible to it [7]. This is why every artifact is in the repository, why work-item records travel with the pull request, and why the living specification is a set of files rather than a wiki.
+
+### Compensation versus policy
+
+Some components exist because today's model cannot do something alone: the stop hook that forces verification, the cap on clarify questions, the directory map at session start. These expire as models improve and are tagged so they can be removed. Others encode the team's decisions: the layer rules, the writing standards, the pull request contract. These are permanent. Tagging each component prevents the harness from calcifying around a model weakness that no longer exists. Anthropic's reference harness for long-running agents makes the same point: the layer most sensitive to model capability should be re-evaluated after each model release [8], and LangChain, which moved its coding agent from 52.8% to 66.5% on Terminal Bench 2.0 by changing only the harness, found that self-verification and trace-driven iteration were the largest levers [9].
+
+### Only written standards generate work
+
+An agent asked an open question ("what is wrong with this?") produces findings in proportion to the asking, because it is allowed to supply the standard being violated. So the agent is never asked open questions, and nothing counts as a finding unless it names the written rule it violates. If the team thinks something matters, it writes the rule. If nobody will write the rule, the finding did not matter. This single principle is what stops the endless backlog.
+
+### Claims carry provenance
+
+A statement about a cause, a consequence, or a fact about the system is tagged observed (with linked evidence), inferred (from named observations), or hypothesized (no evidence). Action is gated on the tag: no fix on a hypothesized cause, no record of a hypothesized consequence. This is the difference between a bug that was diagnosed and a bug that was guessed at.
+
+The improvement discipline behind all six is Mitchell Hashimoto's: whenever an agent makes a mistake, engineer a solution so it never makes that mistake again, in the environment rather than in a prompt [10].
+
+## 4. The system in one pass
+
+### Before code
+
+A human runs `/intent` and writes what is wanted, why, the constraints, the non-goals, and what done means. The intent-then-spec shape follows Anthropic's playbook [5]; the requirement that each criterion be backed by a test, so that completion is computed rather than asserted, follows Sinclair's steel-thread process [11]. The agent runs `/clarify`: contradictions with the living specification first, then only the questions whose answers change what is built, everything else logged as an assumption with its risk. Every decision the agent proposes is an entry with the alternative rejected and what breaks if it is wrong; the human accepts each one by commit. The agent drafts a specification as a delta against the living spec, with criteria that start as failing and can only pass with linked evidence. The human accepts it.
+
+### During code
+
+The agent plans steps mapped to criteria and implements one at a time. Mechanical constraints run on every edit and return the fix in the error message, a practice from OpenAI's harness where linter error messages double as remediation instructions and the layer model (Types → Config → Repo → Service → Runtime → UI) is enforced by structural tests rather than documentation [7]. A stop hook prevents the session from ending with unverified work. A separate evaluator, in a fresh context with no ability to write, grades each criterion against its evidence; the default-fail contract and the fresh-context evaluator are Anthropic's patterns [8]. Done is computed: every criterion confirmed, no blocking items, lint clean, living spec updated.
+
+### For defects
+
+Diagnosis is a stage with its own artifact. Reproduction with attached output. Evidence as links a reviewer can open. Cause claims tagged by provenance, and a fix blocked until the cause is confirmed by a discriminating test. A committed failing test whose failure names the mechanism, which CI verifies fails before the fix and passes after, at the diagnosed location.
+
+### At review
+
+A pull request carries the whole chain. CI checks the contract: acceptances by human authors, criteria confirmed, decisions with ramifications, promotions drafted, living spec updated, diff within budget, description in the required shape. Two read-only subagents answer closed questions: which criterion requires each hunk, and does the delivered behavior match the intent. The human reviewer then answers three questions in order: did the spec solve the intent, were the accepted decisions sound, does the diff carry anything the spec did not require.
+
+### Around all of it
+
+Two writing standards, one for text the model reads (short, enumerated, no rationale) and one for text humans read (readable by someone without context, no AI tells, why not what). Three enforcement tiers: hooks in the session, rulesets and CI on the repository, and a review loop that treats every bypass as data. Work-item records are archived after merge; lasting value is promoted to decision records and the living spec inside the pull request, so nothing is maintained after the fact and nothing of value is lost.
+
+## 5. Why the main decisions went the way they did
+
+### Why the findings log was rejected
+
+The first draft had a log where the agent recorded non-blocking findings for later triage. That is what the team already had, and it is the source of the endless backlog: the agent always finds something, and every entry in confident prose reads as mandatory. The replacement is the cite-a-rule requirement plus an observations file where entries must carry a concrete consequence with provenance, hypothesized consequences are dropped at write time, and anything not converted to real work by the next audit is deleted. The default is that observations die.
+
+### Why one overseer, not a committee
+
+A spec gate that needs two humans is a new queue, and queues are where the data says AI-era delivery stalls [1][3]. In the Change workflow the person doing the work accepts their own intent and spec, because the point of acceptance is that they read and confirmed it, and the second human reviews the chain at pull request time. A wrong spec is caught then, at the cost of a rebuilt request, which is cheaper than a gate on every item. Two-human gates exist only for high-risk paths, by explicit list.
+
+### Why oversight is a set of recorded acts
+
+"One human overseeing" could mean watching the agent work, which produces exactly the confidence gap the data describes. So oversight is defined as acts the agent cannot perform: accepting intent, answering or accepting the clarify log, accepting each decision, accepting the spec. Each is a commit by a human author. If the acts were not performed, the work cannot merge. The 92%-confident, 81%-more-incidents result [4] is what passive oversight looks like at scale.
+
+### Why the ramification field exists
+
+Blind acceptance is the hardest of the original problems because no mechanism can force understanding. The closest thing is to make the consequence of being wrong the thing the human is accepting. A decision with an empty ramification field fails CI. The human still has to read it, but they cannot accept without it in front of them.
+
+### Why artifacts live in the repository and then get archived
+
+The instinct is that a file scoped to one piece of work should not be maintained forever, and that is right. But the agent can only act on what is in the repository, CI can only check what is in the pull request, and the reviewer needs the chain next to the diff. So the records live on the branch, travel with the request, and after merge are moved to a history directory that nothing loads by default. Lasting value is promoted before merge, inside the request, where the reviewer sees it as an ordinary edit. The records are retained; nobody maintains them.
+
+### Why "optimal" is only reachable through budgets
+
+"Make it optimal" has no stopping condition and is a standing invitation to keep adjusting. A dimension the team cares about gets a number and a measurement command in the budgets file and becomes a criterion. A dimension without a budget is, by decision, not optimized, and the agent is told so.
+
+### Why coverage is a spec problem
+
+"Did we cover everything" and "when do we stop" are different questions, and conflating them produces endless polishing. Stopping is answered by the computed criteria. Coverage is answered at the spec stage by required criteria classes (negative, failure, boundary, regression) and a spec reviewer that checks the criteria against the intent, before any code exists, where a gap costs an edit to a file.
+
+### Why subagents are only judges
+
+A subagent runs in a fresh context, which is the one property that makes its verdict independent of the assumptions that produced the code. That property is valuable for evaluation and irrelevant for building. Multi-agent orchestration adds complexity that makes failures hard to debug, and the practitioner consensus is that simple control loops outperform multi-agent systems [12]. So there are three subagents, none can write, and each is asked only closed questions.
+
+### Why three constraint tools instead of one
+
+Ruff implements all its rules natively and does not support custom or third-party rules [13]. Layer contracts need a dependency-graph tool, so import-linter. Invariants neither can express need a small checker the team owns. The rule for which to use is stated once so nobody re-decides it, and a constraint with no check in one of the three does not go into the constraints file.
+
+### Why the process ships in the copier template rather than a plugin
+
+For a project generated from the template [14], copier already versions and updates everything in the repository, including the agent configuration. Claude Code's hooks, skills, and subagents can all be configured standalone in `.claude/` [15]; a plugin adds only a manifest and a distribution channel. A separate plugin would add a manifest, a marketplace, and a compatibility check for no benefit. The plugin form stays available for a repository that was not generated from the template.
+
+### Why `docs/` had to become tracked
+
+The template gitignored generated docs to avoid update conflicts [14]. But the living spec, the decision records, and the constraints are the primary artifacts of this system; they must be versioned or the system has no memory. Copier's skip-if-exists mechanism gives the same no-overwrite guarantee for project-owned files without giving up version control.
+
+### Why break-glass is not enforced by CI
+
+An emergency fix skips the front stage, and a follow-up item is created automatically. Whether and when the follow-up is done depends on the incident, and a fixed window enforced by a machine would either be ignored or produce theatre. The follow-up is listed in the loop report so the decision is made visibly. A process with no legal emergency exit gets an illegal one.
+
+### Why every bypass is a labeled exit
+
+Tier overrides, break-glass, approved test changes, spikes, escalations: each is allowed, labeled, and logged. Walls produce workarounds you cannot see. Labeled exits produce data about where the process is wrong, which is the input to the improvement loop.
+
+### Why the evaluation is a test suite and not a dashboard
+
+The natural instinct is to measure the system with metrics and watch them trend. But metrics do not say whether the system is done, and they can be gamed by weak criteria. So the system is evaluated the way it evaluates code: a fixed set of closed questions with pass conditions, traced to the original problems, with a completion criterion. Metrics remain as diagnostics for when a test fails. The suite runs on every change and on every model change, and a real failure with no covering test adds the test before the fix.
+
+### Why the writing standards are two documents
+
+Text the model reads costs context on every turn and is read literally; it should be short, enumerated, and free of rationale. The practitioner guidance for instruction files is that shorter is better, well under 300 lines, and that they should never duplicate what a linter enforces [16]. Text humans read must be understood by someone without the conversation that produced it; it needs the why, not the what, and none of the tells that make prose read as machine-generated. One document written for both serves neither.
+
+## 6. What the system does not claim
+
+The model's correctness is outside the system's reach. What the system controls is whether the model's work is checkable, and it gives humans a small, defined job at the points where judgment matters. The model sets the ceiling on what can be built; the system sets the floor on what can be merged.
+
+Whether the intent was the right thing to want is a human judgment, exercised at the intent gate and again at review, and no part of the system automates it. The system makes that judgment cheap to exercise and impossible to skip. Böckeler's analysis identifies functional behavior as the least solved of the three things a harness regulates, still requiring human judgment [6]; this system narrows that gap with computed criteria and the intent-match review, and does not claim to close it.
+
+In-session enforcement can be disabled by a determined engineer unless the organization deploys managed settings. The trust boundary is the repository: rulesets and CI check artifacts, not tools, so an engineer who bypasses the agent still cannot merge without the chain.
+
+It is calibrated to the current model. Components tagged as compensation exist because of what today's model cannot do unaided, and they are expected to be removed. The test suite reruns on every model change for exactly this reason.
+
+## 7. How it changes over time
+
+The improvement loop is the only mechanism for changing the system, and it has one shape: something fails, the question is which written definition or check was missing or wrong, and the fix is a change to that definition or check, logged with the trace that motivated it. A change to a prompt is the last resort. Every change carries a hypothesis about what it should fix, the test suite must stay green, and a real failure with no test adds the test first.
+
+Over time this produces a repository whose documents describe what the team believes about quality, whose checks enforce it, and whose history explains why. That repository is the asset, and the agent is one user of it.
+
+---
+
+## References
+
+Retrieved 2026-09-12. Where a primary source could not be fetched directly, the entry names the secondary source used and says so.
+
+1. Faros AI, "The AI Productivity Paradox" research report (telemetry across 10,000+ developers): 21% more tasks, 98% more PRs merged, review time +91%, PR size +154%, no company-level DORA improvement. https://www.faros.ai/blog/ai-software-engineering
+2. Faros AI 2026 telemetry across 22,000 developers, as reported by Hyrax: 31.3% more PRs merged with zero review, incidents per PR up 243%. Secondary source. https://hyrax.dev/blog/review-gap-measurable-faros-ai-telemetry-2026
+3. LinearB 2026 Software Engineering Benchmarks (8.1M PRs, 4,800+ organizations), as reported by RockB: agentic-AI PRs wait 5.3x longer for review; AI PRs 154% larger. Secondary source; the primary report is behind a form. https://baeseokjae.github.io/posts/linearb-2026-engineering-benchmarks/
+4. CloudBees, "2026 State of Code Abundance" (survey of 200+ enterprise technology leaders): 81% report more production issues from AI-generated code; 92% confident it was production-ready. https://www.cloudbees.com/blog/2026-state-of-code-abundance-report
+5. Anthropic, "The AI-Native SDLC Playbook," Claude Academy: intent.md, spec.md, plan.md as committed artifacts; each stage ends by writing one and the next begins by reading it. https://academy.claude.com/courses/ai-native-sdlc-playbook (introduction: https://academy.claude.com/courses/ai-native-sdlc-playbook/introduction; intent capture: https://academy.claude.com/courses/ai-native-sdlc-playbook/capture-intent; requirements and design: https://academy.claude.com/courses/ai-native-sdlc-playbook/requirements-and-design)
+6. Birgitta Böckeler, "Harness engineering for coding agent users," martinfowler.com, 2 April 2026: guides and sensors; computational versus inferential controls; functional behavior as the hardest unsolved dimension. https://martinfowler.com/articles/harness-engineering.html
+7. Ryan Lopopolo, "Harness engineering: leveraging Codex in an agent-first world," OpenAI, February 2026: repository-local knowledge, mechanically enforced layer model, linter messages as remediation, garbage-collection agents. https://openai.com/index/harness-engineering/
+8. Anthropic, `anthropics/cwc-long-running-agents` reference repository, implementing the patterns from "Effective harnesses for long-running agents" (November 2025) and "Harness design for long-running application development" (March 2026): default-FAIL contract, fresh-context evaluator with no Write/Edit tools, re-simplify on model upgrades. https://github.com/anthropics/cwc-long-running-agents
+9. LangChain, "Improving Deep Agents with harness engineering," April 2026: 52.8% to 66.5% on Terminal Bench 2.0 with the model fixed; self-verification, tracing, reasoning allocation. https://www.langchain.com/blog/improving-deep-agents-with-harness-engineering
+10. Mitchell Hashimoto, "My AI Adoption Journey," February 2026, step 5 "Engineer the Harness," as quoted in the dev.to guide below. Secondary source for the quotation. https://dev.to/remybuilds/what-is-harness-engineering-a-builders-guide-3d8c
+11. Matthew Sinclair, Intent: a steel-thread process; acceptance criteria each backed by a test so satisfaction is computed rather than asserted. https://github.com/matthewsinclair/intent
+12. Claude Code Best Practices (community synthesis): simple control loops outperform multi-agent systems; low-level tools plus selective abstractions beat heavy frameworks. https://rosmur.github.io/claudecode-best-practices/
+13. Astral, Ruff FAQ: Ruff implements all rules natively and does not support custom or third-party rules. https://docs.astral.sh/ruff/faq/
+14. vholley, copier-template-python-service (the template this system is being merged into). https://github.com/vholley/copier-template-python-service
+15. Claude Code hooks reference (exit-code semantics, blocking events, settings precedence). https://code.claude.com/docs/en/hooks
+16. HumanLayer, "Writing a good CLAUDE.md": length guidance and the instruction-count findings; and the companion point that instruction files should not duplicate linter-enforced rules. https://www.humanlayer.dev/blog/writing-a-good-claude-md
+
+Secondary evidence not cited inline but used in the design: Vercel's 80% tool reduction raising success from 80% to 100%, and Princeton CORE-Bench's 42% versus 78% for one model under two scaffolds, both as collected in https://winder.ai/ai-agent-harness-comparison/.
