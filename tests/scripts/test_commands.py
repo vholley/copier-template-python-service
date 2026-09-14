@@ -273,7 +273,9 @@ class TestHousekeeping:
     def test_observe_routes_observed_to_defect(self, project: Path, capsys: pytest.CaptureFixture[str]) -> None:
         observe.main(["--file", "x.py", "--line", "1", "--what", "w", "--consequence", "c",
                       "--provenance", "observed", "--source", "PROJ-1", project.as_posix()])
-        assert "defect" in capsys.readouterr().out and "make start" in capsys.readouterr().out or True
+        out = capsys.readouterr().out
+        assert "defect" in out
+        assert "make start" in out
 
     def test_audit_deletes_expired(self, project: Path) -> None:
         (project / "working/observations.md").write_text(
