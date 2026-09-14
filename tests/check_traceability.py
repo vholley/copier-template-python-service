@@ -1,14 +1,13 @@
-"""Fail if scenario directories and the traceability table disagree.
+"""Fail if the scenario index and expected_ids.txt disagree, or a listed test node is missing.
 
-Reads tests/scenarios/expected_ids.txt (one scenario ID per line) and the
-scenario test modules; every ID must have a test and every test must be listed.
 Run: uv run python tests/check_traceability.py
 """
 
 from __future__ import annotations
 
-import re
+import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 HERE = Path(__file__).parent
@@ -16,24 +15,31 @@ SCENARIOS = HERE / "scenarios"
 
 
 def main() -> int:
+    """Entry point."""
     expected = {
         line.strip()
         for line in (SCENARIOS / "expected_ids.txt").read_text().splitlines()
         if line.strip() and not line.startswith("#")
     }
-    found: set[str] = set()
-    for f in SCENARIOS.glob("test_*.py"):
-        found.update(m.replace("_", "-") for m in re.findall(r"def test_([A-Z]+_\d+)", f.read_text()))
-    missing = sorted(expected - found)
-    extra = sorted(found - expected)
-    if missing or extra:
-        print("traceability mismatch")
-        for m in missing:
-            print(f"  listed but no test: {m}")
-        for e in extra:
-            print(f"  test but not listed: {e}")
+    index = tomllib.loads((SCENARIOS / "index.toml").read_text())["scenarios"]
+    problems: list[str] = []
+    problems.extend(f"listed but not in index: {i}" for i in sorted(expected - set(index)))
+    problems.extend(f"in index but not listed: {i}" for i in sorted(set(index) - expected))
+    collected = subprocess.run(
+        ["uv", "run", "pytest", "--collect-only", "-q", "tests/scripts", "tests/test_delivery_generation.py"],
+        cwd=HERE.parent, capture_output=True, text=True, check=False,
+    ).stdout.splitlines()
+    nodes = {ln.strip() for ln in collected if "::" in ln}
+    for sid, tests in index.items():
+        for t in tests:
+            base = t.split("[")[0]
+            if base not in nodes:
+                problems.append(f"{sid}: test node not found: {t}")
+    for p in problems:
+        print(p)
+    if problems:
         return 1
-    print(f"traceability ok: {len(expected)} scenarios")
+    print(f"traceability ok: {len(expected)} scenarios, {sum(len(v) for v in index.values())} test nodes")
     return 0
 
 
