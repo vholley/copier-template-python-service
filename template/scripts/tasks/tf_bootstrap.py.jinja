@@ -1,0 +1,77 @@
+{% if use_gcp -%}
+"""Bootstrap Terraform state buckets for {{ project_name }} (was scripts/tf-bootstrap.sh).
+
+One-time operation. Re-runnable; existing buckets are left alone.
+"""
+
+from __future__ import annotations
+
+import subprocess
+
+from tasks.console import error, info
+
+REGION = "us-central1"
+PROJECTS = ["{{ gcp_project_dev }}", "{{ gcp_project_prod }}"]
+
+
+def _bootstrap_bucket(project: str) -> int:
+    bucket = f"{project}-tfstate"
+    info(bucket)
+    exists = subprocess.run(
+        ["gcloud", "storage", "buckets", "describe", f"gs://{bucket}", f"--project={project}"],
+        capture_output=True, check=False,
+    )
+    if exists.returncode == 0:
+        print("    Already exists. Skipping create.")
+    else:
+        r = subprocess.run(
+            ["gcloud", "storage", "buckets", "create", f"gs://{bucket}",
+             f"--project={project}", f"--location={REGION}", "--uniform-bucket-level-access"],
+            check=False,
+        )
+        if r.returncode != 0:
+            error(f"could not create gs://{bucket}")
+            return r.returncode
+        print("    Created.")
+    print("    Enabling versioning...")
+    r = subprocess.run(
+        ["gcloud", "storage", "buckets", "update", f"gs://{bucket}", "--versioning"],
+        capture_output=True, check=False,
+    )
+    return r.returncode
+
+
+def main(argv: list[str]) -> int:
+    """Entry point: no arguments."""
+    for project in PROJECTS:
+        code = _bootstrap_bucket(project)
+        if code != 0:
+            return code
+    print()
+    print("State buckets ready.")
+    print()
+    print("Next steps:")
+    print("  cd infra/terraform/environments/dev")
+    print("  terraform init")
+    print('  terraform apply -var="github_repository=<owner/repo>"')
+    print()
+    print("Then read the outputs and set them as GitHub environment variables")
+    print("(see the 'GitHub repository setup' section of README.md).")
+    return 0
+{%- else -%}
+"""Set up the Terraform state backend for {{ project_name }} (was scripts/tf-bootstrap.sh)."""
+
+from __future__ import annotations
+
+
+def main(argv: list[str]) -> int:
+    """Entry point: no arguments. Prints the manual backend steps."""
+    print("Configure your Terraform backend in:")
+    print("  infra/terraform/environments/dev/backend.tf")
+    print("  infra/terraform/environments/prod/backend.tf")
+    print()
+    print("Then run:")
+    print("  cd infra/terraform/environments/dev && terraform init")
+    print("  cd infra/terraform/environments/prod && terraform init")
+    return 0
+{%- endif %}

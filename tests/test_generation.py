@@ -57,7 +57,7 @@ class TestExclusions:
 
     def test_no_gcp_excludes_deploy_script(self, tmp_path: Path) -> None:
         project = _generate(tmp_path)
-        assert not (project / "scripts/deploy.sh").exists()
+        assert not (project / "scripts/tasks/deploy.py").exists()
 
     def test_no_gcp_excludes_infra(self, tmp_path: Path) -> None:
         project = _generate(tmp_path)
@@ -97,7 +97,7 @@ class TestInclusions:
 
     def test_gcp_includes_deploy_script(self, tmp_path: Path) -> None:
         project = _generate(tmp_path, **_GCP_EXTRAS)
-        assert (project / "scripts/deploy.sh").exists()
+        assert (project / "scripts/tasks/deploy.py").exists()
 
     def test_docker_includes_dockerfile(self, tmp_path: Path) -> None:
         project = _generate(tmp_path, include_docker=True)

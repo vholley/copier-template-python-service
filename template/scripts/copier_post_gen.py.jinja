@@ -1,0 +1,72 @@
+"""Post-generation task, run by copier (see _tasks in copier.yaml).
+
+This is Python rather than shell because copier runs tasks through the platform
+shell, and the previous `case ... esac` form could not be parsed by cmd.exe --
+every generation on Windows printed "The system cannot find the path specified."
+copier invokes it as a list, so no shell is involved at all.
+"""
+
+from __future__ import annotations
+
+import subprocess
+import sys
+from pathlib import Path
+
+PROJECT_NAME = "{{ _copier_conf.dst_path.name }}"
+ENABLE_DELIVERY = {{ "True" if enable_delivery else "False" }}
+
+NEXT_STEPS = f"""
+Generation complete. Next steps:
+  1. cd {PROJECT_NAME}
+  2. uv run python scripts/task.py bootstrap
+  3. git add . && git commit -m "chore: initial commit"
+  4. git checkout -b main && git checkout develop
+  5. git remote add origin <your-github-repo-url>
+  6. git push -u origin develop main
+
+  Then configure branch protection and GitHub Environments - see README.md.
+
+  To pull future template updates:
+  copier update --trust --skip-answered
+"""
+
+DELIVERY_STEPS = """
+Delivery system installed. Two more setup steps:
+  7. make hooks          (installs pre-commit and the Claude Code hooks)
+     On Windows: uv run pre-commit install --install-hooks
+  8. Register your SSH key as a GitHub signing key and protect it per use
+     (see working/README.md, "Signing acceptances"). Acceptance commits
+     require it; ordinary commits do not.
+"""
+
+
+def main() -> int:
+    """Initialise git, then print next steps on a first generation only."""
+    cwd = Path.cwd()
+
+    if not (cwd / ".git").is_dir():
+        subprocess.run(["git", "init", "-b", "develop"], check=False)
+
+    # copier uses temporary directories named copier._main.* while updating.
+    if cwd.name.startswith("copier._main."):
+        return 0
+
+    # An existing project being updated already has commits; only a first
+    # generation should see the instructions.
+    has_commits = (
+        subprocess.run(
+            ["git", "rev-list", "-1", "HEAD"], capture_output=True, check=False
+        ).returncode
+        == 0
+    )
+    if has_commits:
+        return 0
+
+    print(NEXT_STEPS)
+    if ENABLE_DELIVERY:
+        print(DELIVERY_STEPS)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

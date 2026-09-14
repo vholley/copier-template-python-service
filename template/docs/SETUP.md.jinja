@@ -2,7 +2,7 @@
 
 How to set up a development machine to work on `{{ project_name }}`. Covers tool installation, authentication, and common issues.
 
-After installing the tools in this document, `scripts/bootstrap.sh` handles the Python and project-specific parts.
+After installing the tools in this document, `uv run python scripts/task.py bootstrap` handles the Python and project-specific parts.
 
 ## Prerequisites
 
@@ -32,7 +32,7 @@ If missing, install with your distribution's package manager (e.g. `sudo apt ins
 
 ### Windows
 
-The project's shell scripts (`bootstrap.sh`, `new-app.sh`, etc.) require a Unix-compatible shell. **WSL 2** (Windows Subsystem for Linux) is strongly recommended — it runs a full Linux environment natively inside Windows.
+The project's tasks are Python, so they run natively: `uv run python scripts/task.py <command>`. `make` is a convenience wrapper for macOS and Linux and is not required on Windows — `scripts/task.py` lists every task, and the delivery checks run as `uv run python scripts/delivery/run.py <check>`.
 
 To set up WSL 2, run in an elevated PowerShell prompt, then restart:
 
@@ -66,7 +66,7 @@ Restart your terminal after installing. Verify:
 uv --version
 ```
 
-uv installs Python interpreters on demand; you do not need to install Python separately. `bootstrap.sh` pins the project's Python version via `.python-version` and uv reads that.
+uv installs Python interpreters on demand; you do not need to install Python separately. The bootstrap task pins the project's Python version via `.python-version` and uv reads that.
 {% if include_docker %}
 
 ## Containers
@@ -202,7 +202,7 @@ A linter for Terraform configurations. Not required, but useful for catching iss
 
 ### pre-commit
 
-pre-commit runs linters and formatters on staged files before each commit. `bootstrap.sh` installs it into the project's hooks directory. To make the `pre-commit` command available globally:
+pre-commit runs linters and formatters on staged files before each commit. The bootstrap task installs it into the project's hooks directory. To make the `pre-commit` command available globally:
 
 ```bash
 # macOS / Linux with Homebrew
@@ -247,7 +247,7 @@ The delivery process records your sign-offs as SSH-signed commits. Once:
 
 1. Register your SSH public key on GitHub as a *signing* key (Settings → SSH and GPG keys → New SSH key → Key type: Signing Key). Organization policy: every engineer has one.
 2. Tell git to sign with it: `git config --global gpg.format ssh` and `git config --global user.signingkey ~/.ssh/<key>.pub`.
-3. Protect the key per use: either keep it passphrase-protected and out of ssh-agent, or hold it in an agent that prompts on each use (1Password's SSH agent, or `ssh-add -c` with ssh-askpass). `scripts/bootstrap.sh` warns if it sees neither.
+3. Protect the key per use: either keep it passphrase-protected and out of ssh-agent, or hold it in an agent that prompts on each use (1Password's SSH agent, or `ssh-add -c` with ssh-askpass). The bootstrap task warns if it sees neither.
 4. Requires git 2.34+ and OpenSSH 8.8+ (`git --version`, `ssh -V`).
 
 Only acceptance commits (`make accept`) are signed; ordinary commits are not.
@@ -258,10 +258,10 @@ Only acceptance commits (`make accept`) are signed; ordinary commits are not.
 After installing everything you need, from the project root:
 
 ```bash
-./scripts/bootstrap.sh
+uv run python scripts/task.py bootstrap
 ```
 
-bootstrap.sh:
+The bootstrap task:
 
 1. Installs/updates uv if missing
 2. Installs Python at the version specified in `.python-version`
@@ -337,12 +337,12 @@ The `LOCK_ID` is printed in the error message.
 
 ### `Error: Failed to get existing workspaces: querying Cloud Storage failed`
 
-The state bucket doesn't exist yet, or your gcloud credentials don't have access. For a brand-new project, run `./scripts/tf-bootstrap.sh` once to create the state buckets. After that, ensure ADC is set up.
+The state bucket doesn't exist yet, or your gcloud credentials don't have access. For a brand-new project, run `uv run python scripts/task.py tf-bootstrap` once to create the state buckets. After that, ensure ADC is set up.
 {% endif %}
 
-### `bootstrap.sh` warns about a missing tool
+### The bootstrap task warns about a missing tool
 
-Warnings about missing optional tools are non-fatal. Each tool is needed only for the part of the project that uses it ({% if include_docker %}Docker for container builds, {% endif %}{% if use_gcp %}gcloud for deploys{% if include_terraform %}, Terraform for infrastructure{% endif %}{% endif %}). Install the relevant tool from the section above, then re-run `./scripts/bootstrap.sh`.
+Warnings about missing optional tools are non-fatal. Each tool is needed only for the part of the project that uses it ({% if include_docker %}Docker for container builds, {% endif %}{% if use_gcp %}gcloud for deploys{% if include_terraform %}, Terraform for infrastructure{% endif %}{% endif %}). Install the relevant tool from the section above, then re-run `uv run python scripts/task.py bootstrap`.
 
 ### Pre-commit hook fails on a file you didn't change
 

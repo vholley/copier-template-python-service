@@ -118,7 +118,7 @@ After `uv lock`, run `uv sync` to install the new versions, run `make ci` to con
 {% if use_gcp -%}
 Application Default Credentials let the same `get_secret()` call work locally and in Cloud Run.
 
-First-time setup (already in `bootstrap.sh`):
+First-time setup (already done by `uv run python scripts/task.py bootstrap`):
 
 ```bash
 gcloud auth application-default login
@@ -304,7 +304,7 @@ To debug: open a Python file, click in the gutter to set a breakpoint, then `F5`
 
 ## Common troubleshooting
 
-**`uv: command not found`.** Re-run `./scripts/bootstrap.sh`, which installs uv. Manual fallback: `curl -LsSf https://astral.sh/uv/install.sh | sh`.
+**`uv: command not found`.** Re-run `uv run python scripts/task.py bootstrap`, which checks for uv. Manual fallback: `curl -LsSf https://astral.sh/uv/install.sh | sh`.
 
 **`ModuleNotFoundError` for a workspace package.** Run `uv sync`. This is the symptom when dependencies are out of date or a new app was scaffolded but not synced.
 

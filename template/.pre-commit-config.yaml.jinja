@@ -43,18 +43,18 @@ repos:
     hooks:
       - id: delivery-constraints
         name: delivery constraints
-        entry: env PYTHONPATH=scripts uv run python -m delivery.constraints
+        entry: uv run python scripts/delivery/run.py constraints
         language: system
         pass_filenames: false
         files: ^(libs|apps)/.*\.py$
       - id: delivery-budgets
         name: delivery budgets
-        entry: env PYTHONPATH=scripts uv run python -m delivery.budgets
+        entry: uv run python scripts/delivery/run.py budgets
         language: system
         pass_filenames: false
       - id: delivery-accept-trailer
         name: acceptance trailer
-        entry: env PYTHONPATH=scripts uv run python scripts/delivery/accept_trailer.py
+        entry: uv run python scripts/delivery/run.py accept-trailer
         language: system
         stages: [commit-msg]
 {%- endif %}

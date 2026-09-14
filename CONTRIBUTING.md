@@ -10,22 +10,22 @@ Copier can copy directly from a local directory. Test all four combinations of a
 # 1. Generic Python — the default path (minimal, no GCP)
 copier copy --trust . /tmp/test-minimal \
   -- project_name=test-minimal use_gcp=false app_framework=minimal include_docker=false
-cd /tmp/test-minimal && ./scripts/bootstrap.sh && make ci && cd -
+cd /tmp/test-minimal && uv run python scripts/task.py bootstrap && make ci && cd -
 
 # 2. FastAPI, no GCP
 copier copy --trust . /tmp/test-fastapi \
   -- project_name=test-fastapi use_gcp=false app_framework=fastapi include_docker=false
-cd /tmp/test-fastapi && ./scripts/bootstrap.sh && make ci && cd -
+cd /tmp/test-fastapi && uv run python scripts/task.py bootstrap && make ci && cd -
 
 # 3. GCP + FastAPI (full stack)
 copier copy --trust . /tmp/test-gcp \
   -- project_name=test-gcp use_gcp=true gcp_project_dev=my-project-dev gcp_project_prod=my-project-prod app_framework=fastapi
-cd /tmp/test-gcp && ./scripts/bootstrap.sh && make ci && cd -
+cd /tmp/test-gcp && uv run python scripts/task.py bootstrap && make ci && cd -
 
 # 4. GCP + minimal
 copier copy --trust . /tmp/test-gcp-min \
   -- project_name=test-gcp-min use_gcp=true gcp_project_dev=my-project-dev gcp_project_prod=my-project-prod app_framework=minimal
-cd /tmp/test-gcp-min && ./scripts/bootstrap.sh && make ci && cd -
+cd /tmp/test-gcp-min && uv run python scripts/task.py bootstrap && make ci && cd -
 ```
 
 Clean up after testing:

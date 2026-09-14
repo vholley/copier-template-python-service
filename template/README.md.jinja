@@ -5,10 +5,10 @@ A Python project generated from [copier-template-python-service](https://github.
 ## First-time setup
 
 ```sh
-./scripts/bootstrap.sh
+uv run python scripts/task.py bootstrap
 ```
 
-`bootstrap.sh` installs uv (if missing), pins Python {{ python_version }}, installs all dependencies, installs pre-commit hooks{% if use_gcp %}, and verifies gcloud authentication against `{{ gcp_project_dev }}`{% endif %}. Re-run any time to verify environment state.
+The bootstrap task checks for uv, pins Python {{ python_version }}, installs all dependencies, installs pre-commit hooks{% if use_gcp %}, and verifies gcloud authentication against `{{ gcp_project_dev }}`{% endif %}. Re-run any time to verify environment state.
 
 ## Initializing your GitHub repository
 
@@ -95,7 +95,7 @@ Run `make new-app NAME=<name>` to add a new app. The generated app is wired into
 
 ## Manual fallback
 
-If `scripts/bootstrap.sh` fails, the manual equivalent is:
+If the bootstrap task fails, the manual equivalent is:
 
 1. Install uv: `curl -LsSf https://astral.sh/uv/install.sh | sh`
 2. Pin Python: `uv python install {{ python_version }}`
@@ -149,7 +149,7 @@ copier update --trust --skip-answered
 
 ## Documentation
 
-The `docs/` folder holds template-provided reference material. It is gitignored, so a fresh `git clone` won't have it. Run `./scripts/restore-from-template.sh` to regenerate it (along with any other gitignored files the template ships).
+The `docs/` folder holds template-provided reference material. It is gitignored, so a fresh `git clone` won't have it. Run `uv run python scripts/task.py restore` to regenerate it (along with any other gitignored files the template ships).
 
 - `docs/SETUP.md`: one-time machine setup (install tools, authenticate to GCP, common errors).
 - `docs/RATIONALE.md`: what each tool and pattern is, and why it fits this project.

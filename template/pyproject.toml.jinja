@@ -96,8 +96,17 @@ max-returns = 6
 "**/scripts/delivery/**/*.py" = [
     "T20",    # the delivery scripts print their findings by design
     "S603",   # subprocess calls with fixed executables
+    "S607",   # tools are resolved from PATH, deliberately
     "N802",   # ast.NodeVisitor method names
 ]
+"**/scripts/tasks/**/*.py" = [
+    "T20",    # the task commands report progress to the terminal by design
+    "S603",   # subprocess calls with fixed executables
+    "S607",   # tools are resolved from PATH, deliberately
+]
+"**/scripts/task.py" = ["T20"]
+"**/scripts/copier_post_gen.py" = ["T20", "S603", "S607"]
+"**/scripts/delivery/run.py" = ["T20"]
 "**/cli.py" = ["T20"]
 {%- endif %}
 
@@ -135,7 +144,7 @@ exclude_lines = [
 
 # ---------------------------------------------------------------------------
 # import-linter: layer and forbidden-import contracts (working/architecture/constraints.md)
-# scripts/new-app.sh appends a layers contract for each new app.
+# The new-app task appends a layers contract for each new app.
 # ---------------------------------------------------------------------------
 
 [tool.importlinter]
