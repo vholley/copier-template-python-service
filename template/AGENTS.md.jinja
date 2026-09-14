@@ -1,3 +1,4 @@
+{% if enable_delivery -%}
 # {{ project_name }}
 
 Python {{ python_version }} in a uv workspace: `libs/*` and `apps/*`. One task, one
@@ -72,3 +73,38 @@ A new cloud resource; changes under `libs/shared/`; breaking API changes; persis
 
 <!-- managed:end -->
 Project-specific rules go in `.claude/rules/project.md`, which the template never overwrites.
+{%- else -%}
+# {{ project_name }}
+
+Python {{ python_version }} in a uv workspace: shared code in `libs/*`, deployables in
+`apps/*`. Each member is its own package with its own `pyproject.toml` and `tests/`.
+
+## Commands
+
+- `make ci`: lint, format check, types and tests. Run before every commit and before opening a pull request.
+- `make fix`: apply ruff autofixes and format.
+- `make lint` / `make typecheck` / `make test`: the individual steps.
+- `make new-app NAME=<name>`: scaffold an app under `apps/`.
+- `make help`: every target.
+
+## Conventions
+
+- Ruff and pyright run in strict mode; `docs/CONVENTIONS.md` is the reference.
+- Tests live in the member's own `tests/` directory. `--strict-markers` is on, so
+  register any new pytest marker in the root `pyproject.toml` before using it.
+- Commits follow Conventional Commits; pre-commit enforces it (`make hooks` to install).
+- An app imports from `libs/*` by package name, never by relative path across members.
+
+## Stop and ask first
+
+Changes under `libs/shared/`; breaking API changes; persisted data model changes; a new
+external integration; CI/CD changes; a new runtime dependency. Flag the conflict, explain
+the risk, let the engineer decide.
+
+## Where things are
+
+- `docs/SETUP.md`: first-time setup.
+- `docs/DEVELOPING.md`: the day-to-day loop.
+- `docs/CONVENTIONS.md`: code conventions and lint rules.
+- `docs/RATIONALE.md`: why the template is shaped this way.
+{%- endif %}

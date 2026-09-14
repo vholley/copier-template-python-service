@@ -21,6 +21,9 @@ from delivery import gitx
 WORK_DIR = ".work"
 HISTORY_DIR = Path("working") / "history"
 RETRY_CAP = 3
+# A tuple bound to a name, not written inline: ruff format would strip the
+# parentheses on a py314 target (PEP 758), which is a SyntaxError on 3.13.
+_REBUILD_IGNORED = (json.JSONDecodeError, ValueError, TypeError)
 
 STATES: tuple[str, ...] = (
     "intent",
@@ -432,7 +435,7 @@ def rebuild(repo: Path, item_id: str) -> State:
             workflow = str(old.get("workflow", workflow))
             branch = str(old.get("branch", branch))
             retries = int(old.get("retries", 0))
-        except (json.JSONDecodeError, ValueError, TypeError):
+        except _REBUILD_IGNORED:
             pass
     if (item_dir(repo, item_id) / "diagnosis.md").exists():
         workflow = "change-defect"

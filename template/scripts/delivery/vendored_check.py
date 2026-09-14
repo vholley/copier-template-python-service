@@ -14,7 +14,11 @@ VENDORED = Path(".claude/VENDORED.md")
 def digest(directory: Path) -> str:
     """Stable SHA-256 over every file's relative path and bytes."""
     h = hashlib.sha256()
-    for f in sorted(p for p in directory.rglob("*") if p.is_file()):
+    # Sort by the relative posix path, not by Path: Path comparison is
+    # case-insensitive on Windows, so "SKILL.md" and "references/..." order
+    # differently there and the digest would not match the one CI computes.
+    files = [p for p in directory.rglob("*") if p.is_file()]
+    for f in sorted(files, key=lambda q: q.relative_to(directory).as_posix()):
         h.update(f.relative_to(directory).as_posix().encode())
         h.update(f.read_bytes())
     return h.hexdigest()

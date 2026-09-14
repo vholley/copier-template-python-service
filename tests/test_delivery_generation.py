@@ -64,6 +64,43 @@ class TestDeliveryOff:
         assert diffs == []
 
 
+    def test_plain_agents_md_references_only_what_exists(self, plain_project: Path) -> None:
+        """AGENTS.md is read on every turn; with delivery off it must not describe delivery.
+
+        It was rendered unconditionally, so a plain project told the agent to run
+        `make green`, `make status`, `/intent` and to read working/README.md -- none
+        of which exist. AGENTS.md sits in the `replaced` set above, so its content
+        was asserted nowhere.
+        """
+        text = (plain_project / "AGENTS.md").read_text(encoding="utf-8")
+        forbidden = [
+            "working/", "DELIVERY-SYSTEM", ".claude/rules", ".work/",
+            "make green", "make status", "make start", "make accept", "make observe",
+            "/intent", "/clarify", "/spec", "/red", "/implement", "/diagnose",
+        ]
+        assert [f for f in forbidden if f in text] == []
+
+    def test_plain_agents_md_commands_exist(self, plain_project: Path) -> None:
+        """Every `make <target>` it names is a real target in the generated Makefile."""
+        import re
+
+        text = (plain_project / "AGENTS.md").read_text(encoding="utf-8")
+        makefile = (plain_project / "Makefile").read_text(encoding="utf-8")
+        targets = set(re.findall(r"^([a-z][a-z-]*):", makefile, re.M))
+        named = set(re.findall(r"make ([a-z][a-z-]*)", text))
+        assert named <= targets, sorted(named - targets)
+
+    def test_plain_agents_md_paths_exist(self, plain_project: Path) -> None:
+        """Every docs/ file it points at is actually generated."""
+        import re
+
+        text = (plain_project / "AGENTS.md").read_text(encoding="utf-8")
+        missing = [
+            ref for ref in re.findall(r"`(docs/[\w./-]+)`", text)
+            if not (plain_project / ref).exists()
+        ]
+        assert missing == []
+
     def test_plain_app_template_has_no_spec_marker(self, plain_project: Path) -> None:
         """The spec marker is registered only under enable_delivery, and --strict-markers is not.
 
