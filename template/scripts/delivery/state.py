@@ -432,7 +432,7 @@ def rebuild(repo: Path, item_id: str) -> State:
             workflow = str(old.get("workflow", workflow))
             branch = str(old.get("branch", branch))
             retries = int(old.get("retries", 0))
-        except json.JSONDecodeError, ValueError, TypeError:
+        except (json.JSONDecodeError, ValueError, TypeError):
             pass
     if (item_dir(repo, item_id) / "diagnosis.md").exists():
         workflow = "change-defect"

@@ -26,6 +26,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - label: py313-no-gcp
+            args: >-
+              -d project_name=test-project
+              -d app_framework=minimal
+              -d python_version=3.13
+              -d use_gcp=false
+              -d include_docker=false
           - label: minimal-no-gcp
             args: >-
               -d project_name=test-project
