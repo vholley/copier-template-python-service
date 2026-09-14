@@ -1,0 +1,61 @@
+# The delivery system: what it is and why
+
+{{ project_name }} uses a process for building software with an AI coding agent.
+This page explains the idea. `working/README.md` explains what to do.
+
+## The problem
+
+An agent writes code faster than a team can trust it. The failures repeat: the
+agent builds something other than what was meant; it makes an assumption and
+builds confidently on it; the engineer accepts a recommendation without
+understanding what it commits them to; reviewers cannot keep up with larger,
+more frequent pull requests; bugs get "fixed" on a plausible cause nobody
+verified; asked to find problems, the agent always finds some; and nobody can
+say when a piece of work is done.
+
+## The idea
+
+Quality is defined before the work, in writing, and everything after that
+checks against the definition.
+
+Before code, a human states what is wanted and why, answers the questions that
+would otherwise become assumptions, accepts each decision with its consequence
+in front of them, and accepts a specification whose criteria are computed by
+tests. After code, machinery confirms the criteria were met and a second human
+confirms the specification was the right one.
+
+## Six rules
+
+1. Deterministic before probabilistic. Anything a linter, a test, or a branch
+   rule can check is checked that way. An LLM's judgment is never the only
+   gate.
+2. Human attention is the budget. The human's effort goes to defining the work
+   and to a small, defined review. Everything mechanical is removed from their
+   path. Review is asked for one thing at a time.
+3. Durable state lives in files. The agent's context window is temporary. A
+   decision that is not written into `working/` does not exist.
+4. The LLM is a tool. Every commit has an engineer as its author. Only an
+   engineer can sign an acceptance.
+5. Only written standards generate work. A finding must name the rule it
+   violates; a concern with no rule is a preference and is not recorded. If the
+   team believes something matters, it writes the rule.
+6. No silent decisions. Every decision the agent makes is recorded with what it
+   considered instead and what happens if it is wrong, and a human accepts it.
+
+## What the engineer does
+
+Three signatures per change (intent, spec, tests), two per bug (intent,
+diagnosis), none for a quick change; one review per pull request. The rest is
+the agent's work or the machine's. Any engineer can leave the process for a
+branch with one signature (`make opt-out`).
+
+## What the system does not claim
+
+It does not make the agent correct; it makes the agent's work checkable. It
+does not verify that the intent was the right thing to want; that is the
+engineer's judgment, made cheap to exercise and impossible to skip. It enforces
+nothing on the local machine that a determined engineer cannot disable; the
+trust boundary is the merge, where CI checks artifacts, not tools.
+
+The full design and the reasoning behind each decision are kept with the
+template that generated this repository.

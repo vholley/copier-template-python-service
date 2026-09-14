@@ -392,6 +392,9 @@ class TestMigration:
     def test_migration_script_creates_working_and_reports(self, plain_project: Path, delivery_project: Path, tmp_path: Path) -> None:
         old = tmp_path / "old"
         shutil.copytree(plain_project, old)
+        subprocess.run(["git", "init", "-q"], cwd=old, check=True)
+        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@x", "add", "-A"], cwd=old, check=True)
+        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@x", "commit", "-q", "-m", "init"], cwd=old, check=True)
         (old / "Makefile").write_text((old / "Makefile").read_text() + "\n# local edit\n")
         script = delivery_project / "scripts/migrate-to-delivery.sh"
         r = subprocess.run(["bash", str(script), "--from", str(delivery_project)], cwd=old, capture_output=True, text=True)

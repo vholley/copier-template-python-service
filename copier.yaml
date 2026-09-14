@@ -95,6 +95,7 @@ _exclude:
   - "{% if not enable_delivery %}.claude/skills{% endif %}"
   - "{% if not enable_delivery %}.claude/agents{% endif %}"
   - "{% if not enable_delivery %}.claude/rules{% endif %}"
+  - "{% if app_framework != 'fastapi' %}.claude/rules/api-design.md{% endif %}"
   - "{% if not enable_delivery %}scripts/delivery{% endif %}"
   - "{% if not enable_delivery %}scripts/hooks{% endif %}"
   - "{% if not enable_delivery %}scripts/migrate-to-delivery.sh{% endif %}"
@@ -112,6 +113,7 @@ _exclude:
 # Files the project owns after first generation. Never rewritten by copier
 # update, even when the template changes them (design 17.3, register #87).
 _skip_if_exists:
+  - ".claude/rules/project.md"
   - "working/spec/**"
   - "working/architecture/**"
   - "working/standards/budgets.md"

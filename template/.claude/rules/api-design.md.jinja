@@ -1,0 +1,66 @@
+---
+description: HTTP API design rules (FastAPI apps)
+paths:
+  - "apps/**"
+---
+
+## API design
+
+**Use correct HTTP status codes.**
+
+- `200 OK`: successful read or update that returns a body
+- `201 Created`: resource was created; include a `Location` header pointing to the new resource
+- `204 No Content`: successful operation with no response body (e.g., delete)
+- `400 Bad Request`: client sent invalid input
+- `401 Unauthorized`: missing or invalid credentials
+- `403 Forbidden`: authenticated but not permitted to perform the action
+- `404 Not Found`: resource does not exist
+- `422 Unprocessable Entity`: FastAPI's default for Pydantic validation failures — do not override this
+- `500 Internal Server Error`: unhandled server-side failure; never return stack traces or internal details
+
+**Separate request, domain, and response models.** Never return an internal domain model directly to a client. Define explicit response schemas so internal refactors don't become breaking API changes.
+
+```python
+# Internal domain model — not exposed directly
+class Invoice(BaseModel):
+    id: str
+    amount_cents: int
+    _internal_flag: bool
+
+# Response model — only what the client should see
+class InvoiceResponse(BaseModel):
+    id: str
+    amount: float
+```
+
+**Paginate list endpoints.** Any endpoint returning a collection must support pagination. Use offset/limit or cursor-based pagination consistently, and return metadata (`total` or `next_cursor`) alongside the items.
+
+**Make write operations idempotent where possible.** PUT and PATCH should produce the same result when called multiple times with the same input. Document whether a POST is idempotent.
+
+**Validate at the boundary.** Use Pydantic models on all request bodies. Do not access `request.body()` directly or build manual parsing logic — that is what Pydantic is for.
+
+**Use a consistent error response schema.** FastAPI's default `{"detail": "..."}` shape is acceptable, but whatever format is chosen must be used consistently across every endpoint. Never return ad-hoc error shapes. Define a shared error model and use it in all exception handlers:
+
+```python
+class ErrorResponse(BaseModel):
+    code: str       # machine-readable, e.g. "invoice_not_found"
+    message: str    # human-readable description
+
+@app.exception_handler(PortalInvoiceNotFoundError)
+async def invoice_not_found_handler(request: Request, exc: PortalInvoiceNotFoundError) -> JSONResponse:
+    return JSONResponse(status_code=404, content=ErrorResponse(code="invoice_not_found", message=str(exc)).model_dump())
+```
+
+**Wire authentication via dependency injection.** Use FastAPI's `Depends()` for auth so it is explicit, testable, and applied consistently. Do not implement auth checks inline inside route functions.
+
+```python
+async def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
+    ...
+
+@app.get("/invoices/{id}")
+async def get_invoice(id: str, user: User = Depends(get_current_user)) -> InvoiceResponse:
+    ...
+```
+
+**Version breaking changes with a path prefix.** If a change cannot be made backward-compatible, introduce a new version prefix (`/v2/...`) rather than modifying the existing endpoint in place. Clients on `/v1/` must not break when `/v2/` is deployed.
+

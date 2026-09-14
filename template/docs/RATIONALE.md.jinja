@@ -86,7 +86,7 @@ The split keeps Python application code separate from infrastructure code, deplo
 
 **When to create a second library.** When a block of shared code has a distinct concern and a different consumer set. A test utilities library, for example, is only needed by test code; putting it in `libs/shared` forces it onto every app's dependency tree. If the boundary is real, the library separation is warranted.
 
-**One-way dependency rule.** Apps may depend on libs. Libs must not depend on apps. A lib that finds itself needing app-specific behavior is a signal that the abstraction is inverted — the logic belongs in the app, not the lib.
+**One-way dependency rule.** Apps may depend on libs. Libs must not depend on apps. A lib that finds itself needing app-specific behavior is a signal that the abstraction is inverted: the logic belongs in the app, not the lib.
 
 **No versioning.** Workspace libs update in-place. When a shared interface changes, update every caller in the same commit. The lockfile captures the snapshot; `git log` is the changelog. The publish-and-bump cycle that external packages require does not apply inside a workspace.
 
@@ -221,9 +221,9 @@ The configured hooks are ruff (lint and format), pyright (type-check), and sever
 
 ### CI
 
-CI (continuous integration) runs in GitHub Actions: a set of workflows defined in `.github/workflows/` that GitHub runs on certain events. `ci.yml` runs lint, format-check, typecheck, and tests on every pull request and on pushes to `develop` and `main`. `deploy.yml` builds the container image, pushes it to Artifact Registry, and deploys to Cloud Run — to `dev` on push to `develop`, to `prod` on push to `main`.
+CI (continuous integration) runs in GitHub Actions: a set of workflows defined in `.github/workflows/` that GitHub runs on certain events. `ci.yml` runs lint, format-check, typecheck, and tests on every pull request and on pushes to `develop` and `main`. `deploy.yml` builds the container image, pushes it to Artifact Registry, and deploys to Cloud Run: to `dev` on push to `develop`, to `prod` on push to `main`.
 {% if include_terraform -%}
-Two Terraform workflows when applicable: `terraform-plan.yml` shows the planned infrastructure changes on PRs that touch `infra/`, and `terraform-apply.yml` applies changes — to `dev` on push to `develop`, to `prod` on push to `main`.
+Two Terraform workflows when applicable: `terraform-plan.yml` shows the planned infrastructure changes on PRs that touch `infra/`, and `terraform-apply.yml` applies changes: to `dev` on push to `develop`, to `prod` on push to `main`.
 {% endif %}
 CI invokes `make` targets rather than raw commands. Local `make ci` and CI run the same checks. Drift between them is hard to introduce.
 
@@ -242,3 +242,19 @@ This split keeps the feedback loop fast in dev (commit, push, see it running) wh
 The same pattern applies to Terraform: `terraform apply` runs automatically on push to `develop` for dev, and on push to `main` for prod (gated by the `prod` environment's required-reviewers rule).
 {% endif %}
 {% endif -%}
+{%- if enable_delivery %}
+
+## The delivery system
+
+The repository runs a process for building with an AI coding agent: quality is
+defined before the work (an intent, a spec whose criteria are tests, decisions
+with their consequences), the agent builds one step at a time and cannot end a
+turn with unverified work, and a pull request carries the whole chain so a
+reviewer checks intent and decisions rather than mechanics. The engineer signs
+three times per change; one reviewer approves. `docs/DELIVERY-SYSTEM.md`
+explains the reasoning; `working/README.md` explains what to do.
+
+Why in the template: every project starts with the mechanism installed and no
+rules imposed. Constraints, budgets, and the living spec are the project's to
+write; the checks exist from day one.
+{%- endif %}

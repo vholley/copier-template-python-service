@@ -145,7 +145,7 @@ gcloud secrets add-iam-policy-binding PORTAL_API_KEY \
   --role="roles/secretmanager.secretAccessor"
 ```
 
-> **Runtime SA vs deploy SA.** The project has two CI/CD service accounts created by Terraform: one that deploys containers (`deploy`), one that runs Terraform (`terraform`). Neither of these is the identity your app runs *as* in Cloud Run. Cloud Run services run as a separate **runtime service account** — one you create per service with only the permissions that service needs (Secret Manager access, Pub/Sub, etc.). If you don't specify one, Cloud Run falls back to the Compute Engine default SA, which has broad project-level permissions. Create a dedicated runtime SA for each service and pass it to `gcloud run deploy` with `--service-account=<runtime-sa>@<project>.iam.gserviceaccount.com`. The specific SA name and roles depend on what your service needs.
+> **Runtime SA vs deploy SA.** The project has two CI/CD service accounts created by Terraform: one that deploys containers (`deploy`), one that runs Terraform (`terraform`). Neither of these is the identity your app runs *as* in Cloud Run. Cloud Run services run as a separate **runtime service account**: one you create per service with only the permissions that service needs (Secret Manager access, Pub/Sub, etc.). If you don't specify one, Cloud Run falls back to the Compute Engine default SA, which has broad project-level permissions. Create a dedicated runtime SA for each service and pass it to `gcloud run deploy` with `--service-account=<runtime-sa>@<project>.iam.gserviceaccount.com`. The specific SA name and roles depend on what your service needs.
 
 For local-only values that aren't secrets (test fixtures, mock URLs, throwaway config), create `.env` at the project root:
 
@@ -195,6 +195,29 @@ docker run --rm -p 8080:8080 {{ project_name }}-foo:local
 {%- endif %}
 
 {% endif -%}
+## The Makefile
+
+The Makefile is the single command surface: CI runs the same targets you run
+locally, so the two cannot drift. `make` with no arguments prints every target
+with a one-line description; `make help` is the same list.
+
+Groups:
+
+- setup: `install`, `hooks`
+- checks: `lint`, `format-check`, `typecheck`, `test`, `fix`, `ci`
+{%- if enable_delivery %}
+- delivery checks: `constraints`, `budgets`, `spec-coverage`, `deploy-surface`, `green`, `contract`
+- delivery workflow: `start`, `status`, `accept-prepare`, `accept` (engineer only), `adopt-branch`, `abandon`, `opt-out`, `rebuild`, `observe`, `loop-report`; the LLM stages (`intent`, `clarify`, `spec`, `plan`, `red`, `implement`, `diagnose`, ...) are stubs that name the slash command
+{%- endif %}
+- scaffolding and deployment: `new-app`{% if include_docker %}, `build`{% endif %}{% if use_gcp %}, `deploy`{% endif %}{% if include_terraform %}, `tf-plan`, `tf-apply`{% endif %}
+
+{%- if enable_delivery %}
+
+`make green` is the target the Claude Code session runs after every step; it
+autofixes first, then checks. `make accept` is the one target the agent may not
+run: it signs with your key. See `working/README.md` for the workflow.
+{%- endif %}
+
 ## Pre-commit hooks
 
 Hooks run on every `git commit`. If a hook modifies files (ruff's autofix, for example), the commit is aborted; re-stage the modified files and commit again.
@@ -267,7 +290,7 @@ Enable extra coroutine tracking and slow callback warnings:
 PYTHONASYNCIODEBUG=1 uv run python -m apps.my_app.main
 ```
 
-This adds warnings when a coroutine takes longer than 100 ms in the event loop — useful for spotting blocking calls that should be awaited.
+This adds warnings when a coroutine takes longer than 100 ms in the event loop: useful for spotting blocking calls that should be awaited.
 
 ## VS Code
 

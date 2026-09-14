@@ -34,7 +34,7 @@ Then in **GitHub → repository settings**:
   - Require a pull request before merging
   - Require the `CI` status check to pass
   - Require branches to be up to date before merging
-- **Environments** — see [GitHub repository setup](#github-repository-setup) below.
+- **Environments**: see [GitHub repository setup](#github-repository-setup) below.
 
 ## Day-to-day commands
 
@@ -108,7 +108,7 @@ If `scripts/bootstrap.sh` fails, the manual equivalent is:
 {% if use_gcp %}
 ## GitHub repository setup
 
-Deployments authenticate to GCP via Workload Identity Federation. Follow these steps in order — Terraform must run first to produce the values you need.
+Deployments authenticate to GCP via Workload Identity Federation. Follow these steps in order: Terraform must run first to produce the values you need.
 
 **Step 1: Apply Terraform for each environment.**
 
@@ -157,3 +157,13 @@ The `docs/` folder holds template-provided reference material. It is gitignored,
 - `docs/DEVELOPING.md`: daily tasks (running code, running tests, adding dependencies, debugging).
 
 `CLAUDE.md` at the repo root is checked in. It holds project-specific instructions for Claude Code sessions; edit it as the project evolves.
+{%- if enable_delivery %}
+
+## How work flows
+
+This repository uses a delivery process for working with an AI coding agent.
+Start with `make start`; `make status` tells you where you are; `make help`
+lists everything. The one-page guide is `working/README.md`; the reasoning is
+`docs/DELIVERY-SYSTEM.md`. Register your SSH key as a GitHub signing key before
+your first sign-off (see `working/README.md#signing`).
+{%- endif %}

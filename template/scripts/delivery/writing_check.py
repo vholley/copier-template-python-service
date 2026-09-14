@@ -1,7 +1,8 @@
-"""A small, deterministic check for AI-writing tells in human-facing text.
+"""Deterministic writing check for human-facing documents (working/standards/human-facing.md).
 
-The full pass is the vendored deslop skill; this catches the handful of patterns that
-can be matched mechanically. Usage: writing_check.py FILE... Exit 0/1.
+Flags the lexical and structural tells the deslop skill's reference lists as
+detectable by pattern. The deslop skill itself does the rewriting; this only
+refuses. Output: `path:line: WRITING-nn message`. Exit 0/1.
 """
 
 from __future__ import annotations
@@ -10,43 +11,53 @@ import re
 import sys
 from pathlib import Path
 
-PATTERNS: list[tuple[str, re.Pattern[str]]] = [
-    ("em-dash", re.compile(r"—")),
-    ("negative parallelism", re.compile(r"\b(?:it'?s|this is|that is) not (?:just |only )?[^.]{1,60}[,;] (?:it'?s|it is|but)\b", re.I)),
-    ("self-answered question", re.compile(r"\?\s+(?:Because|The answer|Yes|No)\b")),
-    ("pompous copula", re.compile(r"\b(?:serves as|stands as|represents a)\b", re.I)),
-    ("throat-clearing", re.compile(r"\b(?:Here'?s the thing|It'?s worth noting|At its core|When you think about it)\b", re.I)),
-    ("marker vocabulary", re.compile(r"\b(?:delve|leverage|robust|seamless|tapestry|landscape|paradigm|unlock|empower|elevate|multifaceted|utilize)\b", re.I)),
+from delivery.block import fail
+
+TELLS: list[tuple[str, re.Pattern[str], str]] = [
+    ("WRITING-01", re.compile(r"—"), "em-dash; use a comma, colon, or a new sentence"),
+    ("WRITING-02", re.compile(r"\b(isn't|is not|not) (just|merely|only) [^.]{1,80}?\b(it's|it is|but)\b", re.I), "negative parallelism (not just X, it's Y); state the claim"),
+    ("WRITING-03", re.compile(r"\b(delve|tapestry|paradigm|synergy|leverage|robust|seamless|holistic|elevate|empower|unlock|harness|game-changer|cutting-edge)\b", re.I), "AI-tell vocabulary; use the plain word"),
+    ("WRITING-04", re.compile(r"\b(serves as|stands as|represents a|marks a)\b", re.I), "pompous copula; use 'is'"),
+    ("WRITING-05", re.compile(r"^\s*[^#\n]{0,60}\?\s*$"), "a question the text answers itself; state the answer"),
+    ("WRITING-06", re.compile(r"\b(it's worth noting|it is worth noting|here's the thing|the key insight|at its core|when you really think about it)\b", re.I), "filler bridge; delete it"),
+    ("WRITING-07", re.compile(r"\b(deeply|genuinely|truly|fundamentally|remarkably|incredibly)\b", re.I), "filler intensifier"),
 ]
+SKIP_LINE = re.compile(r"^\s*(```|<!--|\||-{3,})")
 
 
-def check(text: str) -> list[tuple[int, str]]:
-    """(line, tell) for every hit; fenced code blocks are skipped."""
-    hits: list[tuple[int, str]] = []
+def check_file(path: Path) -> list[str]:
+    """WRITING-nn lines for one file. Code blocks, tables, and comments are skipped."""
+    out: list[str] = []
     in_code = False
-    for i, line in enumerate(text.splitlines(), start=1):
+    for i, line in enumerate(path.read_text().splitlines(), start=1):
         if line.strip().startswith("```"):
             in_code = not in_code
             continue
-        if in_code:
+        if in_code or SKIP_LINE.match(line):
             continue
-        hits.extend((i, name) for name, pat in PATTERNS if pat.search(line))
-    return hits
+        for rule_id, pattern, msg in TELLS:
+            if pattern.search(line):
+                out.append(f"{path.as_posix()}:{i}: {rule_id} {msg}")
+    return out
 
 
 def main(argv: list[str]) -> int:
-    """Entry point."""
-    code = 0
-    for arg in argv:
-        path = Path(arg)
-        if not path.exists():
-            print(f"{arg}: missing")
-            code = 1
-            continue
-        for line, tell in check(path.read_text()):
-            print(f"{arg}:{line}: WRITING {tell}")
-            code = 1
-    return code
+    """Entry point: one or more files."""
+    files = [Path(a) for a in argv if not a.startswith("--")]
+    if not files:
+        return fail("usage", "at least one file is required", "see docstring",
+                    ["uv run python -m delivery.writing_check README.md"], "working/README.md#skills", env=True)
+    lines: list[str] = []
+    for f in files:
+        if f.exists():
+            lines.extend(check_file(f))
+    for ln in lines:
+        print(ln)
+    if lines:
+        return fail("writing", f"{len(lines)} writing tell(s) listed above",
+                    "human-facing text is written for a reader without context (working/standards/human-facing.md)",
+                    ["rewrite the lines, or run the deslop skill on the file"], "working/README.md#skills")
+    return 0
 
 
 if __name__ == "__main__":

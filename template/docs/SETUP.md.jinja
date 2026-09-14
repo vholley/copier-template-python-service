@@ -240,6 +240,19 @@ Verify:
 claude --version
 ```
 
+{%- if enable_delivery %}
+## Signing key for acceptances
+
+The delivery process records your sign-offs as SSH-signed commits. Once:
+
+1. Register your SSH public key on GitHub as a *signing* key (Settings → SSH and GPG keys → New SSH key → Key type: Signing Key). Organization policy: every engineer has one.
+2. Tell git to sign with it: `git config --global gpg.format ssh` and `git config --global user.signingkey ~/.ssh/<key>.pub`.
+3. Protect the key per use: either keep it passphrase-protected and out of ssh-agent, or hold it in an agent that prompts on each use (1Password's SSH agent, or `ssh-add -c` with ssh-askpass). `scripts/bootstrap.sh` warns if it sees neither.
+4. Requires git 2.34+ and OpenSSH 8.8+ (`git --version`, `ssh -V`).
+
+Only acceptance commits (`make accept`) are signed; ordinary commits are not.
+{%- endif %}
+
 ## First-run verification
 
 After installing everything you need, from the project root:

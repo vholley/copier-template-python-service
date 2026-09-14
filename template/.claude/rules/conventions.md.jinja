@@ -1,0 +1,93 @@
+---
+description: Code conventions, docstrings, and style; loaded when touching Python
+paths:
+  - "libs/**"
+  - "apps/**"
+---
+
+## Conventions
+
+Conventions are documented in `docs/CONVENTIONS.md`. Read that file before making non-trivial code changes. Highlights:
+
+- Strict type annotations on all functions. Pyright runs in strict mode.
+- Pydantic for data that crosses module boundaries.
+- Use `BaseAppSettings` (from `shared.config`) for all app config. Never read `os.environ` directly.
+- Call `configure_logging()` (from `shared.logging_setup`) once at app startup, before any log statements.
+{% if use_gcp -%}
+- Use `get_secret()` (from `shared.gcp`) for secrets at runtime. Never hardcode credentials or read them from env vars directly.
+{% endif -%}
+- structlog for logging; never `print` outside scripts.
+- httpx for HTTP clients; never `requests`.
+- Conventional commits for commit messages (`feat:`, `fix:`, `chore:`, etc.).
+- Use descriptive branch names following `<type>/<short-description>` (e.g., `feat/add-auth-endpoint`).
+{% if app_framework == "fastapi" -%}
+- Every FastAPI service must expose a health check endpoint (e.g. `GET /healthz` returning `{"status": "ok"}`). Cloud Run uses this to determine whether the container is ready to serve traffic.
+{% endif -%}
+- Log the service name and key config values (without secrets) once at startup. This makes it possible to confirm what was deployed and with what configuration from logs alone.
+
+
+## Documentation
+
+**The minimal-context bar.** Documentation passes if someone who did not write the code can understand what it does and why from the docs alone. Write for the next engineer, not for yourself.
+
+**Every app needs a README.** Create `apps/<name>/README.md` for each service covering at minimum:
+- What the service does and why it exists
+- What triggers it (HTTP request, Pub/Sub message, scheduled job, etc.)
+- What external systems it depends on
+- What it produces or modifies
+
+**Update documentation in the same PR as the code.** If a PR changes behavior, it must update the relevant documentation. Stale docs are actively misleading. "I'll update the docs in a follow-up PR" is not acceptable.
+
+{% if app_framework == "fastapi" -%}
+**Keep OpenAPI docstrings accurate.** FastAPI generates its interactive API docs (`/docs`) from route function docstrings and Pydantic model `Field(description=...)` annotations. These are the client-facing contract — a consumer should be able to integrate against the generated docs without reading source code.
+
+```python
+class InvoiceResponse(BaseModel):
+    id: str = Field(description="Unique invoice identifier.")
+    amount: float = Field(description="Invoice total in the account's base currency.")
+
+@app.get("/invoices/{id}", response_model=InvoiceResponse)
+async def get_invoice(id: str) -> InvoiceResponse:
+    """Fetch a single invoice by ID.
+
+    Returns the invoice fields visible to the authenticated user.
+    Raises 404 if the invoice does not exist or is not accessible.
+    """
+    ...
+```
+
+{% endif -%}
+**Document significant architectural decisions in the nearest README.** When a non-obvious technical decision is made — choosing a GCP service, adopting a pattern, deciding how to split responsibilities between services — add a brief note to the most relevant README (typically `apps/<name>/README.md` or the project root `README.md`): the decision, the alternatives considered, and why this one was chosen. Future engineers cannot reconstruct this context from code alone.
+
+## Coding
+
+Python is the standard language for this project. Default to Python unless the task is data-related, in which case use SQL. Only use other programming languages when specifically requested.
+
+When implementation involves meaningful tradeoffs, include the options and their implications in the plan. When selecting libraries, frameworks, or design patterns, consider alternatives beyond the most popular defaults when better suited to the specific requirements.
+- Discuss first: choosing between recursion and iteration for a tree traversal with memory constraints.
+- Write directly: a function to reverse a string.
+
+When asked to fix or modify code, change only what the request requires. Do not refactor surrounding code unless asked. If you notice a bug or improvement adjacent to the requested change, flag it at the end of the response without making the change.
+
+When the user shares code with a specific question, answer the question and flag critical issues only. Do not perform unsolicited code review unless asked.
+
+Use 4-space indentation and follow conventions of the respective language. Comment code to explain **why**, not what. Add comments for: intent or reasoning behind non-obvious decisions, algorithmic complexity, assumptions or edge cases not apparent from the code, workarounds or performance considerations, and business logic embedded in queries. Write comments understandable by someone without full context of the code. Use docstrings for functions, classes, and modules per language convention. Do not comment self-evident operations.
+- Correct: `# Boyer-Moore outperformed binary search for this data distribution`
+- Incorrect: `# loop through the list`
+
+Additive changes to APIs and data models are safe: new optional fields, new endpoints, new enum values. Removing or renaming fields, changing types, and removing endpoints are breaking changes that will silently break existing clients or corrupt stored data. If a breaking change is necessary, raise it before implementing — it requires a versioning strategy or a coordinated migration plan.
+
+
+## Programming style
+
+**Separate I/O from computation.** Write pure functions that transform data, and keep fetching and writing in a separate layer. A function that fetches from an API and processes the result is hard to test; two functions — one that fetches, one that transforms — means the logic is testable without mocks.
+
+**Functions and modules before classes.** Reach for a class only when you need to encapsulate mutable state together with the behavior that operates on it. For stateless logic, a module with functions is simpler and easier to test. Avoid `class XProcessor` with a single method — that is just a function with extra steps.
+
+**Composition over inheritance.** Avoid deep inheritance hierarchies. Python's duck typing and `Protocol` handle polymorphism without inheritance in most cases. Prefer injecting a collaborator over subclassing it.
+
+**Prefer immutable data.** Avoid mutating function arguments or shared mutable state. Pydantic models support `model_config = ConfigDict(frozen=True)` for immutability; use it for models that represent a snapshot. Use frozen dataclasses for internal data structures.
+
+**Small, single-responsibility functions.** If a function's name needs "and", split it. If you need to scroll to understand a function, decompose it. Complexity lives in the composition of simple pieces, not in individual functions.
+
+**Explicit over implicit.** Pass dependencies — clients, settings, loggers — as function arguments or constructor parameters. Avoid module-level globals that fetch their own state; they make behavior hard to follow and tests painful to write.

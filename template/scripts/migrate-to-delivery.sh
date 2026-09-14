@@ -1,37 +1,37 @@
 #!/usr/bin/env bash
-# Copy the delivery system into a project generated from an earlier template version.
-# Usage: scripts/migrate-to-delivery.sh --from <path to a freshly generated project>
+# Migrate a project generated from an earlier template version (MIGRATION.md).
+# Usage: scripts/migrate-to-delivery.sh [--from <generated-project-with-delivery>]
+# With --from, files are copied from that project; otherwise from this project's
+# own template output (after copier update).
 set -euo pipefail
 
 SRC=""
-while [ $# -gt 0 ]; do
-  case "$1" in
-    --from) SRC="$2"; shift 2 ;;
-    *) echo "usage: $0 --from <generated-project>"; exit 2 ;;
-  esac
-done
-[ -n "$SRC" ] || { echo "usage: $0 --from <generated-project>"; exit 2; }
-[ -d "$SRC/working" ] || { echo "$SRC does not look like a project with the delivery system"; exit 2; }
+if [ "${1:-}" = "--from" ]; then SRC="$2"; fi
+SRC="${SRC:-.}"
 
-for d in working scripts/delivery scripts/hooks .claude; do
-  mkdir -p "$(dirname "$d")"
-  cp -R "$SRC/$d" "$d"
-done
-cp "$SRC/.dockerignore" .dockerignore
-mkdir -p .github/workflows .github/actions/setup
-for w in delivery-checks review-agents spec-draft post-merge entropy-audit; do
-  cp "$SRC/.github/workflows/$w.yml" ".github/workflows/$w.yml"
-done
-cp "$SRC/.github/actions/setup/action.yml" .github/actions/setup/action.yml
-cp "$SRC/MIGRATION.md" MIGRATION.md
-
-echo "Copied: working/, scripts/delivery/, scripts/hooks/, .claude/, .dockerignore, delivery workflows."
-echo "Files the template replaces; merge by hand where marked modified:"
-for f in Makefile .github/workflows/ci.yml AGENTS.md .github/pull_request_template.md .pre-commit-config.yaml pyproject.toml; do
-  if [ -f "$f" ] && ! cmp -s "$f" "$SRC/$f"; then
-    echo "  $f: modified (compare with $SRC/$f)"
-  else
-    cp "$SRC/$f" "$f" 2>/dev/null && echo "  $f: replaced" || echo "  $f: missing in source"
+echo "== creating working/ (existing files are kept)"
+for f in README.md commands.toml observations.md standards/model-facing.md standards/human-facing.md \
+         standards/criteria-templates.md standards/budgets.md architecture/overview.md \
+         architecture/constraints.md architecture/constraints-baseline.txt architecture/decisions/README.md \
+         spec/README.md history/.gitkeep; do
+  if [ ! -e "working/$f" ] && [ -e "$SRC/working/$f" ]; then
+    mkdir -p "$(dirname "working/$f")"
+    cp "$SRC/working/$f" "working/$f"
+    echo "   added working/$f"
   fi
 done
-echo "Next: make hooks; register your SSH signing key; read working/README.md"
+
+echo "== replaced files you had modified (merge by hand):"
+for f in Makefile .github/workflows/ci.yml AGENTS.md .github/pull_request_template.md .pre-commit-config.yaml; do
+  if [ -e "$f" ] && git ls-files --error-unmatch "$f" >/dev/null 2>&1; then
+    if ! git diff --quiet HEAD -- "$f" 2>/dev/null; then
+      echo "   $f: modified locally"
+    fi
+  fi
+done
+
+if [ -x scripts/restore-from-template.sh ]; then
+  echo "== restoring docs/ from the template"
+  scripts/restore-from-template.sh >/dev/null 2>&1 || true
+fi
+echo "done. Next: make hooks; see MIGRATION.md"

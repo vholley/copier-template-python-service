@@ -1,0 +1,39 @@
+---
+description: Security, IAM, and container rules; loaded when touching code or infrastructure
+paths:
+  - "libs/**"
+  - "apps/**"
+  - "infra/**"
+---
+
+## Security and safety
+
+- Never log PII.
+- Never log credentials, tokens, or API keys.
+- Return generic error messages to clients; log detail server-side.
+- Validate and sanitize all external input at API boundaries — HTTP requests, Pub/Sub messages, and any data crossing a service boundary.
+- Don't weaken or bypass authentication, even temporarily.
+- All API changes require security review.
+- Prefer reversible operations. Test destructive changes (deletes, migrations, schema changes) in dev before prod.
+- Infrastructure changes (Terraform) require the same review discipline as application code.
+
+**IAM and service accounts:**
+
+- **No primitive IAM roles.** Never grant `roles/owner`, `roles/editor`, or `roles/viewer`. Always use a predefined role scoped to what the service actually needs (e.g., `roles/secretmanager.secretAccessor`), or create a custom role if nothing fits.
+- **One service account per service.** Shared service accounts make access auditing impossible and widen the blast radius on compromise.
+- **Resource-scoped bindings over project-scoped.** Grant IAM at the resource level when possible — accessor on a specific secret, not all secrets in the project. Terraform makes this straightforward.
+- **No service account key files.** Never create or download a service account key. Use Workload Identity Federation for GitHub Actions and attached service accounts for Cloud Run. A requirement for a key file is a signal to use WIF instead.
+- **Justify every IAM grant in Terraform.** Any `google_project_iam_member`, `google_project_iam_binding`, or `google_service_account_iam_*` resource must include a comment explaining the minimum required role and why it is needed.
+
+**Container security:**
+
+- **Do not run as root.** Add a non-root `USER` instruction to the Dockerfile.
+- **Use a minimal base image.** Prefer a slim or distroless variant. Fewer packages mean a smaller attack surface and faster image pulls.
+- **Pin base image versions.** Use a fully specified tag (e.g., `python:3.12.9-slim-bookworm`) rather than a floating tag like `python:3.12-slim`. Unpinned images can change silently between builds, introducing unexpected behavior or vulnerabilities.
+{% if app_framework == "fastapi" -%}
+- **Configure CORS explicitly.** Never set `allow_origins=["*"]` on a service that handles authenticated requests or sensitive data. Define the exact list of allowed origins. Overly permissive CORS allows malicious sites to make credentialed requests on behalf of your users.
+{% endif -%}
+
+**Dependencies:**
+
+- **Audit for known CVEs.** Run `uv run pip-audit` before adding new packages and in CI. A failing audit should block merge the same as a failing test.

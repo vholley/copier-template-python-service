@@ -1,0 +1,25 @@
+# Migrating an existing project to the delivery system
+
+This template version adds the delivery system: a tracked `working/` directory,
+new Makefile targets, checks in CI, session hooks for Claude Code, and a new
+`AGENTS.md`. Projects generated from an earlier version can adopt it with
+`copier update --trust --skip-answered` followed by:
+
+    bash scripts/migrate-to-delivery.sh
+
+The script:
+
+1. creates `working/` with the standards, templates, and an empty constraints
+   file (nothing is overwritten if it exists);
+2. reports which replaced files you had modified locally (`Makefile`,
+   `.github/workflows/ci.yml`, `AGENTS.md`, `.github/pull_request_template.md`)
+   so you can merge your changes by hand;
+3. restores `docs/` from the template.
+
+`docs/` stays untracked, as before. `.gitignore` is unchanged.
+
+After migrating: `make hooks`, register your SSH key as a GitHub signing key
+(see `working/README.md#signing`), enable the process per member by adding
+`[tool.delivery] enabled = true` to that member's `pyproject.toml`, and write
+the member's living spec under `working/spec/<name>.md`. A member without one
+is reported as unspecified and is not blocked.
