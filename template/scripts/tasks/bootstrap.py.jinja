@@ -48,75 +48,65 @@ def _version(tool: str, *args: str) -> str | None:
     return (r.stdout or r.stderr).splitlines()[0].strip()
 
 
-def _install_uv() -> bool:
-    """Install uv the way its own documentation recommends for this platform."""
-    if platform.system() == "Windows":
-        warn("uv not found. Install it, then re-run this task:")
-        warn('  powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"')
-        return False
+def _uv_install_hint() -> None:
+    """Point at the right installer: uv installs itself differently per platform."""
     warn("uv not found. Install it, then re-run this task:")
-    warn("  curl -LsSf https://astral.sh/uv/install.sh | sh")
-    return False
+    if platform.system() == "Windows":
+        warn('  powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"')
+    else:
+        warn("  curl -LsSf https://astral.sh/uv/install.sh | sh")
 
 
-def main(argv: list[str]) -> int:
-    """Entry point: no arguments."""
-    if argv:
-        warn(f"ignoring unexpected arguments: {' '.join(argv)}")
-
-    info(f"Platform: {platform.system()} ({platform.machine()})")
-
-    uv = _version("uv", "--version")
-    if uv is None:
-        _install_uv()
-        return 1
-    info(f"uv: {uv}")
-
+def _sync_project() -> None:
+    """Python, dependencies and git hooks."""
     info("Installing Python {{ python_version }}...")
     _run("uv", "python", "install", "{{ python_version }}")
-
     info("Syncing workspace dependencies...")
     _run("uv", "sync")
-
     info("Installing pre-commit hooks...")
     _run("uv", "run", "pre-commit", "install", "--install-hooks")
     _run("uv", "run", "pre-commit", "install", "--hook-type", "commit-msg")
 
-    if shutil.which("code"):
-        info("Installing VS Code extensions...")
-        for ext in VS_CODE_EXTENSIONS:
-            r = _run("code", "--install-extension", ext, "--force", check=False)
-            (info if r.returncode == 0 else warn)(f"  {ext}")
-    else:
+
+def _install_editor_extensions() -> None:
+    if not shutil.which("code"):
         warn("VS Code CLI (code) not found - extensions will be")
         warn("suggested when you open the project. To enable auto-install:")
         warn("VS Code -> Command Palette -> 'Shell Command: Install code command in PATH'.")
+        return
+    info("Installing VS Code extensions...")
+    for ext in VS_CODE_EXTENSIONS:
+        r = _run("code", "--install-extension", ext, "--force", check=False)
+        (info if r.returncode == 0 else warn)(f"  {ext}")
 {%- if use_gcp %}
 
+
+def _check_gcloud() -> None:
     gcloud = _version("gcloud", "--version")
     if gcloud is None:
         warn("gcloud CLI not found. Manual installation required.")
         warn("  Install from: https://cloud.google.com/sdk/docs/install")
         warn("  Then run: gcloud init && gcloud auth application-default login")
         warn("See docs/SETUP.md (GCP section). Re-run this task when done.")
+        return
+    info(f"gcloud: {gcloud}")
+    token = _run("gcloud", "auth", "application-default", "print-access-token", check=False)
+    if token.returncode != 0:
+        warn("No application-default credentials.")
+        warn("Run: gcloud auth application-default login")
     else:
-        info(f"gcloud: {gcloud}")
-        token = _run("gcloud", "auth", "application-default", "print-access-token", check=False)
-        if token.returncode != 0:
-            warn("No application-default credentials.")
-            warn("Run: gcloud auth application-default login")
-        else:
-            info("Application-default credentials present.")
-        project = _run("gcloud", "config", "get-value", "project", check=False)
-        current = project.stdout.strip()
-        if not current or current == "(unset)":
-            warn("No default gcloud project set.")
-            warn("Run: gcloud config set project {{ gcp_project_dev }}")
-        else:
-            info(f"gcloud project: {current}")
+        info("Application-default credentials present.")
+    current = _run("gcloud", "config", "get-value", "project", check=False).stdout.strip()
+    if not current or current == "(unset)":
+        warn("No default gcloud project set.")
+        warn("Run: gcloud config set project {{ gcp_project_dev }}")
+    else:
+        info(f"gcloud project: {current}")
 {%- endif %}
 {%- if include_docker %}
 
+
+def _check_docker() -> None:
     docker = _version("docker", "--version")
     if docker is None:
         warn("Docker not found. Docker Desktop needs user interaction to install.")
@@ -128,6 +118,8 @@ def main(argv: list[str]) -> int:
 {%- endif %}
 {%- if include_terraform %}
 
+
+def _check_terraform() -> None:
     terraform = _version("terraform", "version")
     if terraform is None:
         warn("Terraform not found. Install it and re-run this task:")
@@ -136,17 +128,46 @@ def main(argv: list[str]) -> int:
         info(f"terraform: {terraform}")
 {%- endif %}
 
+
+def _next_steps() -> None:
     print()
     info("Setup complete.")
     print()
     print("Next steps:")
     if platform.system() == "Windows":
-        print("  uv run python scripts/task.py help          # see all commands")
+        print("  uv run python scripts/task.py            # see all tasks")
         print("  uv run python scripts/task.py new-app <name>")
     else:
         print("  make help                 # see all commands")
         print("  make new-app NAME=<name>  # create your first app")
         print("  make ci                   # verify lint + types + tests pass")
+
+
+def main(argv: list[str]) -> int:
+    """Entry point: no arguments."""
+    if argv:
+        warn(f"ignoring unexpected arguments: {' '.join(argv)}")
+
+    info(f"Platform: {platform.system()} ({platform.machine()})")
+
+    uv = _version("uv", "--version")
+    if uv is None:
+        _uv_install_hint()
+        return 1
+    info(f"uv: {uv}")
+
+    _sync_project()
+    _install_editor_extensions()
+{%- if use_gcp %}
+    _check_gcloud()
+{%- endif %}
+{%- if include_docker %}
+    _check_docker()
+{%- endif %}
+{%- if include_terraform %}
+    _check_terraform()
+{%- endif %}
+    _next_steps()
     return 0
 
 

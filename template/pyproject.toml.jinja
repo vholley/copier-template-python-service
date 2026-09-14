@@ -92,6 +92,15 @@ max-returns = 6
     "PLR0915",
 {%- endif %}
 ]
+# The task commands ship whatever enable_delivery is: they report progress to the
+# terminal and shell out to uv, git and gcloud by design.
+"**/scripts/tasks/**/*.py" = [
+    "T20",    # progress output is the point
+    "S603",   # subprocess calls with fixed executables
+    "S607",   # tools are resolved from PATH, deliberately
+]
+"**/scripts/task.py" = ["T20"]
+"**/scripts/copier_post_gen.py" = ["T20", "S603", "S607"]
 {%- if enable_delivery %}
 "**/scripts/delivery/**/*.py" = [
     "T20",    # the delivery scripts print their findings by design
@@ -99,14 +108,6 @@ max-returns = 6
     "S607",   # tools are resolved from PATH, deliberately
     "N802",   # ast.NodeVisitor method names
 ]
-"**/scripts/tasks/**/*.py" = [
-    "T20",    # the task commands report progress to the terminal by design
-    "S603",   # subprocess calls with fixed executables
-    "S607",   # tools are resolved from PATH, deliberately
-]
-"**/scripts/task.py" = ["T20"]
-"**/scripts/copier_post_gen.py" = ["T20", "S603", "S607"]
-"**/scripts/delivery/run.py" = ["T20"]
 "**/cli.py" = ["T20"]
 {%- endif %}
 

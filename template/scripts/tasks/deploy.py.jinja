@@ -33,7 +33,10 @@ def main(argv: list[str]) -> int:
 
     tag = subprocess.run(
         ["git", "rev-parse", "--short", "HEAD"],
-        cwd=repo, text=True, capture_output=True, check=True,
+        cwd=repo,
+        text=True,
+        capture_output=True,
+        check=True,
     ).stdout.strip()
     image = f"{REGION}-docker.pkg.dev/{project}/{REPO}/{name}"
 
@@ -44,16 +47,33 @@ def main(argv: list[str]) -> int:
         ),
         (
             f"Building {image}:{tag}",
-            ["docker", "build", "-t", f"{image}:{tag}", "-t", f"{image}:latest",
-             "-f", f"apps/{name}/Dockerfile", "."],
+            [
+                "docker",
+                "build",
+                "-t",
+                f"{image}:{tag}",
+                "-t",
+                f"{image}:latest",
+                "-f",
+                f"apps/{name}/Dockerfile",
+                ".",
+            ],
         ),
         ("Pushing image", ["docker", "push", f"{image}:{tag}"]),
         ("Pushing latest", ["docker", "push", f"{image}:latest"]),
         (
             f"Deploying to Cloud Run ({project})",
-            ["gcloud", "run", "deploy", name,
-             f"--project={project}", f"--region={REGION}", f"--image={image}:{tag}",
-             "--platform=managed", "--no-allow-unauthenticated"],
+            [
+                "gcloud",
+                "run",
+                "deploy",
+                name,
+                f"--project={project}",
+                f"--region={REGION}",
+                f"--image={image}:{tag}",
+                "--platform=managed",
+                "--no-allow-unauthenticated",
+            ],
         ),
     ]
     for label, cmd in steps:
