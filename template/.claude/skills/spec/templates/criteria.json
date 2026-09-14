@@ -1,0 +1,16 @@
+{
+  "id": "<work-id>",
+  "change_type": "new-behavior | changed-behavior | defect | trivial",
+  "criteria": [
+    {
+      "id": "C1",
+      "class": "positive | negative | failure | boundary | regression | budget | reproduction | location | e2e",
+      "statement": "<declarative, testable>",
+      "verify": "<exact command>",
+      "status": "fail",
+      "evidence": null,
+      "evaluator": null,
+      "plan_steps": []
+    }
+  ]
+}

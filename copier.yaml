@@ -93,6 +93,7 @@ _exclude:
   - "{% if not enable_delivery %}.claude/settings.json{% endif %}"
   - "{% if not enable_delivery %}.claude/commands{% endif %}"
   - "{% if not enable_delivery %}.claude/skills{% endif %}"
+  - "{% if not enable_delivery %}.claude/VENDORED.md{% endif %}"
   - "{% if not enable_delivery %}.claude/agents{% endif %}"
   - "{% if not enable_delivery %}.claude/rules{% endif %}"
   - "{% if app_framework != 'fastapi' %}.claude/rules/api-design.md{% endif %}"
