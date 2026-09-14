@@ -72,8 +72,17 @@ def test_red_precedes_green(module: str) -> None:
     assert red <= green, f"{module}: test file added after the script"
 
 
-def test_scripts_pass_generated_lint_and_types() -> None:
-    lint = subprocess.run(["uv", "run", "ruff", "check", "--config", "/tmp/gen-ruff.toml", str(SCRIPTS)], cwd=ROOT, capture_output=True, text=True)
-    assert lint.returncode == 0, lint.stdout
+def test_scripts_pass_generated_lint_and_types(delivery_project: Path) -> None:
+    """The delivery scripts pass the ruff rules a generated project enforces on itself.
+
+    Run from inside the generated project, as `make lint` does: ruff resolves
+    per-file-ignores globs against the project root, so linting from outside with
+    --config reports ignored rules (T20, S603) as errors.
+    """
+    lint = subprocess.run(
+        ["uv", "run", "ruff", "check", "--no-cache", "scripts/delivery"],
+        cwd=delivery_project, capture_output=True, text=True,
+    )
+    assert lint.returncode == 0, lint.stdout + lint.stderr
     types = subprocess.run(["uv", "run", "pyright", "-p", "pyrightconfig.strict.json"], cwd=ROOT, capture_output=True, text=True)
     assert types.returncode == 0, types.stdout[-2000:]
