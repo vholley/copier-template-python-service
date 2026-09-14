@@ -177,6 +177,46 @@ class TestSigners:
         with pytest.raises(signers.FetchError):
             signers.load("github:acme")
 
+    def test_personal_account_resolves_without_an_org(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """github:<owner> comes from github.repository_owner, a user on a personal repo.
+
+        orgs/<user>/members is a 404 there, which used to become a FetchError and
+        block every pull request.
+        """
+        calls: list[str] = []
+
+        def fake_gh(*args: str) -> str:
+            calls.append(args[0])
+            if args[0].startswith("orgs/"):
+                raise OSError("HTTP 404: Not Found")
+            if args[0] == "users/vholley":
+                return '{"login": "vholley", "type": "User", "email": "v@example.invalid"}'
+            if args[0] == "users/vholley/ssh_signing_keys":
+                return '[{"key": "ssh-ed25519 AAAAKEY"}]'
+            raise AssertionError(args)
+
+        monkeypatch.setattr(signers, "_gh", fake_gh)
+        keys = signers.load("github:vholley")
+        assert keys["v@example.invalid"] == ["ssh-ed25519 AAAAKEY"]
+        assert keys["vholley@users.noreply.github.com"] == ["ssh-ed25519 AAAAKEY"]
+        assert any(c.startswith("orgs/") for c in calls)
+
+    def test_org_whose_members_cannot_be_read_still_fails_closed(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A genuine org we lack permission on must not silently fall back to one user."""
+
+        def fake_gh(*args: str) -> str:
+            if args[0].startswith("orgs/"):
+                raise OSError("HTTP 403: Forbidden")
+            if args[0] == "users/acme":
+                return '{"login": "acme", "type": "Organization"}'
+            raise AssertionError(args)
+
+        monkeypatch.setattr(signers, "_gh", fake_gh)
+        with pytest.raises(signers.FetchError):
+            signers.load("github:acme")
+
     def test_contract_fails_closed_on_fetch_failure(self, signed_repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
         build_standard_item(signed_repo)
         monkeypatch.setattr(signers, "_github_signing_keys", lambda _org: (_ for _ in ()).throw(OSError("network")))

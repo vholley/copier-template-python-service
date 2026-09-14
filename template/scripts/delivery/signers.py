@@ -30,12 +30,27 @@ def _gh(*args: str) -> str:
     return out.stdout
 
 
-def _github_signing_keys(org: str) -> dict[str, list[str]]:
-    """Map email principal -> keys for every org member with registered signing keys."""
-    members = json.loads(_gh(f"orgs/{org}/members", "--paginate"))
+def _logins(owner: str) -> list[str]:
+    """The accounts that may sign: an org's members, or the user themselves.
+
+    github:<owner> is built from github.repository_owner, which is a personal
+    account on a personal repository. orgs/<user>/members is a 404 there, and
+    treating that as a fetch failure blocked every pull request.
+    """
+    try:
+        members = json.loads(_gh(f"orgs/{owner}/members", "--paginate"))
+    except OSError:
+        account = json.loads(_gh(f"users/{owner}"))
+        if str(account.get("type", "")) == "Organization":
+            raise  # a real org whose members we could not read: fail closed
+        return [str(account["login"])]
+    return [str(m["login"]) for m in members]
+
+
+def _github_signing_keys(owner: str) -> dict[str, list[str]]:
+    """Map email principal -> keys for every signer with registered signing keys."""
     keys: dict[str, list[str]] = {}
-    for m in members:
-        login = str(m["login"])
+    for login in _logins(owner):
         user = json.loads(_gh(f"users/{login}"))
         principals = [f"{login}@users.noreply.github.com"]
         if user.get("email"):
