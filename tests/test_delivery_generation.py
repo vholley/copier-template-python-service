@@ -52,6 +52,7 @@ class TestDeliveryOff:
             ".github/workflows/ci.yml", ".github/pull_request_template.md",
             "README.md", "scripts/new-app.sh", ".copier-answers.yml",
             "docs/RATIONALE.md", "docs/DEVELOPING.md", "docs/SETUP.md",  # gain a delivery section (S9)
+            "app-template/pyproject.toml",  # gains [tool.delivery] (S11)
         }
         diffs = [p for p, b in plain.items() if p not in replaced and full.get(p) != b]
         assert diffs == []
