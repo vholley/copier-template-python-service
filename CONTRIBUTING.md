@@ -4,27 +4,38 @@ This is a personal [copier](https://copier.readthedocs.io/) template. Changes to
 
 ## Testing a template change
 
-Copier can copy directly from a local directory. Test all four combinations of answers to catch regressions across the conditional paths:
+Copier can copy directly from a local directory. `enable_delivery` is the widest axis -- it
+changes roughly half the tree -- so test it in both positions, then the framework and cloud
+combinations:
+
+```sh
+# 0. The base template on its own, with no delivery system
+copier copy --trust . /tmp/test-plain \
+  -d project_name=test-plain -d enable_delivery=false
+cd /tmp/test-plain && uv run python scripts/task.py bootstrap && make ci && cd -
+```
+
+Then the delivery-enabled combinations:
 
 ```sh
 # 1. Generic Python — the default path (minimal, no GCP)
 copier copy --trust . /tmp/test-minimal \
-  -- project_name=test-minimal use_gcp=false app_framework=minimal include_docker=false
+  -d project_name=test-minimal -d use_gcp=false -d app_framework=minimal -d include_docker=false
 cd /tmp/test-minimal && uv run python scripts/task.py bootstrap && make ci && cd -
 
 # 2. FastAPI, no GCP
 copier copy --trust . /tmp/test-fastapi \
-  -- project_name=test-fastapi use_gcp=false app_framework=fastapi include_docker=false
+  -d project_name=test-fastapi -d use_gcp=false -d app_framework=fastapi -d include_docker=false
 cd /tmp/test-fastapi && uv run python scripts/task.py bootstrap && make ci && cd -
 
 # 3. GCP + FastAPI (full stack)
 copier copy --trust . /tmp/test-gcp \
-  -- project_name=test-gcp use_gcp=true gcp_project_dev=my-project-dev gcp_project_prod=my-project-prod app_framework=fastapi
+  -d project_name=test-gcp -d use_gcp=true -d gcp_project_dev=my-project-dev -d gcp_project_prod=my-project-prod -d app_framework=fastapi
 cd /tmp/test-gcp && uv run python scripts/task.py bootstrap && make ci && cd -
 
 # 4. GCP + minimal
 copier copy --trust . /tmp/test-gcp-min \
-  -- project_name=test-gcp-min use_gcp=true gcp_project_dev=my-project-dev gcp_project_prod=my-project-prod app_framework=minimal
+  -d project_name=test-gcp-min -d use_gcp=true -d gcp_project_dev=my-project-dev -d gcp_project_prod=my-project-prod -d app_framework=minimal
 cd /tmp/test-gcp-min && uv run python scripts/task.py bootstrap && make ci && cd -
 ```
 

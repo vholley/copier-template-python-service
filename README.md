@@ -98,7 +98,7 @@ If you set up the GitHub CLI for HTTPS instead of SSH, the `gh:` shorthand also 
 copier copy --trust gh:your-org/copier-template-python-service <new-project-name>
 ```
 
-The `--trust` flag is required because the template uses copier's `_tasks` feature to run `git init` and print next-step instructions after generation. Copier requires explicit opt-in for any template that runs shell commands during generation.
+The `--trust` flag is required because the template uses copier's `_tasks` feature to run `git init` and print next-step instructions after generation. Copier requires explicit opt-in for any template that runs commands during generation. The task is a list, not a shell string, so no shell is involved and it behaves the same on macOS, Linux and Windows.
 
 copier asks the following questions:
 
@@ -112,8 +112,33 @@ copier asks the following questions:
 | `gcp_project_prod` | (required if `use_gcp`) | E.g. `my-project-prod` |
 | `include_docker` | `false` | Adds Dockerfile and container build targets |
 | `include_terraform` | `false` | Adds `infra/terraform/` scaffolding; Terraform CI workflows require `use_gcp` |
+| `enable_delivery` | `true` | Installs the delivery system: `working/`, the `.claude/` process, delivery checks and workflows |
+| `owner_group` | (empty) | GitHub handle auto-requested for review on protected paths, e.g. `@org/platform`. Empty means no CODEOWNERS |
+| `high_risk_paths` | `["**/auth/**", "**/migrations/**"]` | Globs that require a second reviewer |
+| `trivial_paths` | `["docs/**", "*.md", ...]` | Globs eligible for a trivial change with no work item |
 
 After generation, `cd` into the new project and run `uv run python scripts/task.py bootstrap` to install tooling and verify the environment. On macOS and Linux the same tasks are available as `make` targets; on Windows use `scripts/task.py` directly.
+
+## The delivery system
+
+`enable_delivery` defaults to `true`. It installs a process for building software with an
+AI coding agent, on top of the base toolchain:
+
+- `working/`: the living spec, architecture constraints, standards and budgets. Tracked, and
+  owned by the project after first generation — `copier update` never rewrites it.
+- `.claude/`: 26 commands, 14 skills, 4 read-only review agents, path-scoped rules, and the
+  session hooks that enforce the stages.
+- `scripts/delivery/`: the checks — constraints, budgets, spec coverage, the test ratchet, the
+  PR contract, the deployable surface.
+- Five CI workflows: delivery checks, review agents, spec drafting, post-merge and an entropy
+  audit.
+
+Answer `enable_delivery: false` for the base template on its own: uv workspace, ruff, pyright,
+pytest, pre-commit and CI, with none of the process. That is what earlier versions of this
+template produced.
+
+`docs/design.md` is the design document the implementation refers to by decision number
+(D1-D42); `docs/system-overview.md` is the shorter argument for the approach.
 
 ## GCP deployment
 
