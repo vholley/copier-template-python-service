@@ -5,16 +5,24 @@ new Makefile targets, checks in CI, session hooks for Claude Code, and a new
 `AGENTS.md`. Projects generated from an earlier version can adopt it with
 `copier update --trust --skip-answered` followed by:
 
-    bash scripts/migrate-to-delivery.sh
+    bash scripts/migrate-to-delivery.sh --from <a freshly generated project>
+
+`--from` is required: the script copies the new directories out of a project
+generated from this template version, so it needs one to copy from. Generate a
+throwaway one next to your project and point at it.
 
 The script:
 
 1. creates `working/` with the standards, templates, and an empty constraints
    file (nothing is overwritten if it exists);
 2. reports which replaced files you had modified locally (`Makefile`,
-   `.github/workflows/ci.yml`, `AGENTS.md`, `.github/pull_request_template.md`)
-   so you can merge your changes by hand;
+   `.github/workflows/ci.yml`, `AGENTS.md`,
+   `.github/pull_request_template.md`, `.pre-commit-config.yaml`) so you can
+   merge your changes by hand;
 3. restores `docs/` from the template.
+
+`copier update` also brings in `pyproject.toml` changes (Ruff rules,
+import-linter, the `spec` pytest marker, dev dependencies); review that diff.
 
 `docs/` stays untracked, as before. `.gitignore` is unchanged.
 

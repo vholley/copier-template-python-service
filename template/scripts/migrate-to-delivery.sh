@@ -5,9 +5,20 @@
 # own template output (after copier update).
 set -euo pipefail
 
-SRC=""
-if [ "${1:-}" = "--from" ]; then SRC="$2"; fi
-SRC="${SRC:-.}"
+# --from is required: step 1 copies out of a project generated from this
+# template version. Defaulting SRC to "." made the guard below read "if
+# working/$f is absent and ./working/$f exists", which is never both, so a bare
+# invocation silently copied nothing.
+if [ "${1:-}" != "--from" ] || [ -z "${2:-}" ]; then
+  echo "usage: scripts/migrate-to-delivery.sh --from <a freshly generated project>" >&2
+  echo "see MIGRATION.md" >&2
+  exit 2
+fi
+SRC="$2"
+if [ ! -d "$SRC/working" ]; then
+  echo "$SRC does not look like a project generated with the delivery system" >&2
+  exit 2
+fi
 
 echo "== creating working/ (existing files are kept)"
 for f in README.md commands.toml observations.md standards/model-facing.md standards/human-facing.md \
