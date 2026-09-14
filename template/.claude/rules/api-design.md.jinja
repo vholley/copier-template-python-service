@@ -27,6 +27,7 @@ class Invoice(BaseModel):
     amount_cents: int
     _internal_flag: bool
 
+
 # Response model — only what the client should see
 class InvoiceResponse(BaseModel):
     id: str
@@ -43,23 +44,28 @@ class InvoiceResponse(BaseModel):
 
 ```python
 class ErrorResponse(BaseModel):
-    code: str       # machine-readable, e.g. "invoice_not_found"
-    message: str    # human-readable description
+    code: str  # machine-readable, e.g. "invoice_not_found"
+    message: str  # human-readable description
+
 
 @app.exception_handler(PortalInvoiceNotFoundError)
-async def invoice_not_found_handler(request: Request, exc: PortalInvoiceNotFoundError) -> JSONResponse:
-    return JSONResponse(status_code=404, content=ErrorResponse(code="invoice_not_found", message=str(exc)).model_dump())
+async def invoice_not_found_handler(
+    request: Request, exc: PortalInvoiceNotFoundError
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=404,
+        content=ErrorResponse(code="invoice_not_found", message=str(exc)).model_dump(),
+    )
 ```
 
 **Wire authentication via dependency injection.** Use FastAPI's `Depends()` for auth so it is explicit, testable, and applied consistently. Do not implement auth checks inline inside route functions.
 
 ```python
-async def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
-    ...
+async def get_current_user(token: str = Depends(oauth2_scheme)) -> User: ...
+
 
 @app.get("/invoices/{id}")
-async def get_invoice(id: str, user: User = Depends(get_current_user)) -> InvoiceResponse:
-    ...
+async def get_invoice(id: str, user: User = Depends(get_current_user)) -> InvoiceResponse: ...
 ```
 
 **Version breaking changes with a path prefix.** If a change cannot be made backward-compatible, introduce a new version prefix (`/v2/...`) rather than modifying the existing endpoint in place. Clients on `/v1/` must not break when `/v2/` is deployed.

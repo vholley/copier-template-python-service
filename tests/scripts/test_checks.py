@@ -116,6 +116,31 @@ class TestConstraints:
         (project / "libs/core/src/core/config.py").write_text("import os\nDB = os.getenv('DB_URL')\n")
         assert constraints.main([str(project)]) == 0
 
+    def test_commented_out_rule_does_not_run(self, project: Path) -> None:
+        """The template ships INV-01 inside <!-- --> as an example to uncomment.
+
+        The parser matched the line anyway, so every generated project with GCP
+        failed `make ci`: shared/gcp.py reads the environment, and the example's
+        allow list does not include it.
+        """
+        (project / "working/architecture").mkdir(parents=True, exist_ok=True)
+        (project / "working/architecture/constraints.md").write_text(
+            "# Constraints\n\n"
+            "<!-- INV-01: enable by uncommenting and editing the allow list:\n"
+            "- INV-01 (check: constraints.py INV-01) [allow: shared.config]: "
+            "the environment is read only in the listed modules.\n"
+            "-->\n",
+            encoding="utf-8",
+        )
+        src = project / "libs/shared/src/shared"
+        src.mkdir(parents=True, exist_ok=True)
+        (src / "gcp.py").write_text(
+            '"""G."""\n\nimport os\n\n\ndef p() -> str:\n'
+            '    """P."""\n    return os.environ["GOOGLE_CLOUD_PROJECT"]\n',
+            encoding="utf-8",
+        )
+        assert constraints.main([str(project)]) == 0
+
     def test_unlisted_rule_does_not_run(self, project: Path) -> None:
         (project / "working/architecture/constraints.md").write_text("# Constraints\n")
         (project / "libs/core/src/core/x.py").write_text("import os\nY = os.getenv('X')\n")

@@ -79,7 +79,16 @@ def read_constraints(repo: Path) -> list[Constraint]:
     if not path.exists():
         return []
     out: list[Constraint] = []
-    for line in path.read_text().splitlines():
+    commented = False
+    for line in path.read_text(encoding="utf-8").splitlines():
+        # The template ships INV-01 as a commented example ("enable by
+        # uncommenting"), so a rule inside <!-- --> must not run.
+        if "<!--" in line:
+            commented = True
+        if commented:
+            if "-->" in line:
+                commented = False
+            continue
         m = _CONSTRAINT_RE.match(line.strip())
         if m is None:
             continue

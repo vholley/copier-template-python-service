@@ -46,6 +46,7 @@ class InvoiceResponse(BaseModel):
     id: str = Field(description="Unique invoice identifier.")
     amount: float = Field(description="Invoice total in the account's base currency.")
 
+
 @app.get("/invoices/{id}", response_model=InvoiceResponse)
 async def get_invoice(id: str) -> InvoiceResponse:
     """Fetch a single invoice by ID.
