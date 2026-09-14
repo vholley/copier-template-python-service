@@ -2,7 +2,7 @@
 
 Every hook is `python -m delivery.hooks <event>` reading Claude Code's event JSON
 on stdin. Exit 0 allows; exit 2 blocks with a four-line message on stderr
-(design 11.1, 19.2). Thin shell wrappers under scripts/hooks/ call these; the
+(design 11.1, 19.2). scripts/hooks/hook.py calls these; the
 tests call hooks.run(event, payload, repo) directly.
 
   session-start   prints the orientation text (7.1, 19.3) on stdout
@@ -344,7 +344,8 @@ class TestSettings:
             for entry in entries:
                 for h in entry["hooks"]:
                     assert h["type"] == "command", f"{event}: hooks are deterministic shell (11.1)"
-                    assert h["command"].startswith("scripts/hooks/"), h["command"]
+                    assert "scripts/hooks/hook.py" in h["command"], h["command"]
+                    assert h["command"].split()[-1] in hooks.EVENTS, h["command"]
 
     def test_every_declared_hook_script_exists(self) -> None:
         root = Path(__file__).parents[2] / "template"
@@ -352,5 +353,42 @@ class TestSettings:
         for entries in settings["hooks"].values():
             for entry in entries:
                 for h in entry["hooks"]:
-                    script = root / h["command"].split()[0]
+                    rel = next(a for a in h["command"].split() if a.endswith(".py"))
+                    script = root / rel
                     assert script.exists(), script
+
+    def test_every_event_is_declared_in_settings(self) -> None:
+        """settings.json wires all eight events, including post-edit."""
+        settings = json.loads((Path(__file__).parents[2] / "template/.claude/settings.json").read_text())
+        declared = {
+            h["command"].split()[-1]
+            for entries in settings["hooks"].values()
+            for entry in entries
+            for h in entry["hooks"]
+        }
+        assert declared == set(hooks.EVENTS)
+
+
+class TestAbsolutePaths:
+    """Claude Code sends file_path as an absolute path (M5)."""
+
+    def test_protected_path_blocks_when_sent_absolute(self, repo: Path) -> None:
+        (repo / ".claude").mkdir(parents=True, exist_ok=True)
+        (repo / ".claude/settings.json").write_text("{}\n", encoding="utf-8")
+        payload = {"tool_input": {"file_path": str(repo / ".claude" / "settings.json")}}
+        code, _out, _err = hooks.run("edit", payload, repo)
+        assert code == 2
+
+    def test_relative_and_absolute_agree(self, repo: Path) -> None:
+        (repo / ".claude").mkdir(parents=True, exist_ok=True)
+        (repo / ".claude/settings.json").write_text("{}\n", encoding="utf-8")
+        rel = hooks.run("edit", {"tool_input": {"file_path": ".claude/settings.json"}}, repo)
+        absolute = hooks.run(
+            "edit", {"tool_input": {"file_path": str(repo / ".claude" / "settings.json")}}, repo
+        )
+        assert rel[0] == absolute[0] == 2
+
+    def test_path_outside_the_repo_is_allowed(self, repo: Path) -> None:
+        payload = {"tool_input": {"file_path": str(Path.home() / "notes.txt")}}
+        code, _out, _err = hooks.run("edit", payload, repo)
+        assert code == 0

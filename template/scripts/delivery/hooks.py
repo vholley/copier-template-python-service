@@ -2,9 +2,9 @@
 
 Usage: python -m delivery.hooks <event>   (event JSON on stdin)
 Events: session-start, prompt, edit, post-edit, bash, ask, stop, subagent-stop.
-Exit 0 allows. Exit 2 blocks with a four-line message on stderr. The shell
-wrappers under scripts/hooks/ call this; run(event, payload, repo) is the
-testable core.
+Exit 0 allows. Exit 2 blocks with a four-line message on stderr.
+scripts/hooks/hook.py is what Claude Code invokes; run(event, payload, repo)
+is the testable core.
 
 Rules the hooks enforce apply only where the design says: stage guards on a
 branch bound to a work item (spikes exempt); protected paths everywhere;
@@ -162,10 +162,28 @@ def prompt(payload: dict[str, object], repo: Path) -> tuple[int, str, str]:
     return 0, "", ""
 
 
+def _rel(path: str, repo: Path) -> str:
+    """A tool's file_path as a repo-relative posix path.
+
+    Claude Code sends an absolute path, and on Windows str(repo) uses backslashes
+    while the rule patterns are all forward-slashed -- a plain string strip left
+    the path absolute, so every guard below silently matched nothing.
+    """
+    if not path:
+        return path
+    p = Path(path)
+    if not p.is_absolute():
+        return p.as_posix()
+    try:
+        return p.resolve().relative_to(repo.resolve()).as_posix()
+    except ValueError:
+        return p.as_posix()
+
+
 def edit(payload: dict[str, object], repo: Path) -> tuple[int, str, str]:
     """PreToolUse for Edit/Write: protected paths, state.json, and stage guards."""
     path = _str(_tool_input(payload), "file_path")
-    rel = path.replace(str(repo) + "/", "") if path.startswith(str(repo)) else path
+    rel = _rel(path, repo)
     if rel.endswith("state.json") and rel.startswith(".work/"):
         return _exit(
             "state",

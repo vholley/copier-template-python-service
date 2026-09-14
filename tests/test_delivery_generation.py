@@ -5,9 +5,12 @@ Red for plan step S1: C01, C02, C04. Later steps add their own tests here.
 
 from __future__ import annotations
 
+import json
 import subprocess
+import sys
 from pathlib import Path
 
+import pytest
 import yaml
 
 from tests.conftest import BASE_ANSWERS, TEMPLATE, generate
@@ -76,6 +79,55 @@ class TestDeliveryOff:
         text = (delivery_project / "app-template/tests/test_main.py").read_text(encoding="utf-8")
         assert "pytest.mark.spec" in text
         assert "markers = [" in (delivery_project / "pyproject.toml").read_text(encoding="utf-8")
+
+
+class TestHookEntryPoint:
+    """C30: the hooks Claude Code invokes actually run in a generated project.
+
+    The previous shell wrappers ran `python -m delivery.hooks` without
+    PYTHONPATH=scripts, so every hook died with ModuleNotFoundError and silently
+    did nothing. They were only ever asserted to exist, never executed.
+    """
+
+    @pytest.fixture
+    def project(self, delivery_copy: Path) -> Path:
+        """The copy as a real repository: the hooks read git state, as they would in use."""
+        git = ["git", "-c", "user.name=t", "-c", "user.email=t@example.invalid"]
+        subprocess.run(["git", "init", "-q", "-b", "develop"], cwd=delivery_copy, check=True)
+        subprocess.run(["git", "symbolic-ref", "HEAD", "refs/heads/develop"], cwd=delivery_copy, check=True)
+        subprocess.run([*git, "add", "-A"], cwd=delivery_copy, capture_output=True, check=True)
+        subprocess.run([*git, "commit", "-q", "-m", "chore: init"], cwd=delivery_copy, check=True)
+        return delivery_copy
+
+    def _run(self, project: Path, event: str, payload: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [sys.executable, "scripts/hooks/hook.py", event],
+            cwd=project, input=payload, capture_output=True, text=True, check=False,
+        )
+
+    @pytest.mark.parametrize(
+        "event",
+        ["session-start", "prompt", "edit", "bash", "ask", "post-edit", "stop", "subagent-stop"],
+    )
+    def test_every_hook_runs(self, project: Path, event: str) -> None:
+        r = self._run(project, event, "{}")
+        assert "ModuleNotFoundError" not in r.stderr, r.stderr
+        assert "Traceback" not in r.stderr, r.stderr
+        assert r.returncode in (0, 2), (r.returncode, r.stderr)
+
+    def test_protected_path_is_blocked_through_the_entry_point(self, project: Path) -> None:
+        """End to end: absolute path in, exit 2 out -- the way Claude Code calls it."""
+        target = project / ".claude" / "settings.json"
+        payload = json.dumps({"tool_input": {"file_path": str(target)}})
+        r = self._run(project, "edit", payload)
+        assert r.returncode == 2, (r.returncode, r.stdout, r.stderr)
+        assert "protected" in r.stdout + r.stderr
+
+    def test_ordinary_source_file_is_allowed(self, project: Path) -> None:
+        target = project / "libs" / "shared" / "src" / "shared" / "config.py"
+        payload = json.dumps({"tool_input": {"file_path": str(target)}})
+        r = self._run(project, "edit", payload)
+        assert r.returncode == 0, (r.returncode, r.stdout, r.stderr)
 
 
 class TestDeliveryAnswers:

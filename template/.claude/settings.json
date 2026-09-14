@@ -2,24 +2,85 @@
   "includeCoAuthoredBy": false,
   "hooks": {
     "SessionStart": [
-      { "matcher": "startup|resume", "hooks": [ { "type": "command", "command": "scripts/hooks/session-start.sh" } ] }
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --quiet python scripts/hooks/hook.py session-start"
+          }
+        ]
+      }
     ],
     "UserPromptSubmit": [
-      { "hooks": [ { "type": "command", "command": "scripts/hooks/prompt.sh" } ] }
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --quiet python scripts/hooks/hook.py prompt"
+          }
+        ]
+      }
     ],
     "PreToolUse": [
-      { "matcher": "Edit|Write", "hooks": [ { "type": "command", "command": "scripts/hooks/edit.sh" } ] },
-      { "matcher": "Bash", "hooks": [ { "type": "command", "command": "scripts/hooks/bash.sh" } ] },
-      { "matcher": "AskUserQuestion", "hooks": [ { "type": "command", "command": "scripts/hooks/ask.sh" } ] }
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --quiet python scripts/hooks/hook.py edit"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --quiet python scripts/hooks/hook.py bash"
+          }
+        ]
+      },
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --quiet python scripts/hooks/hook.py ask"
+          }
+        ]
+      }
     ],
     "PostToolUse": [
-      { "matcher": "Edit|Write", "hooks": [ { "type": "command", "command": "scripts/hooks/post-edit.sh" } ] }
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --quiet python scripts/hooks/hook.py post-edit"
+          }
+        ]
+      }
     ],
     "Stop": [
-      { "hooks": [ { "type": "command", "command": "scripts/hooks/stop.sh" } ] }
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --quiet python scripts/hooks/hook.py stop"
+          }
+        ]
+      }
     ],
     "SubagentStop": [
-      { "hooks": [ { "type": "command", "command": "scripts/hooks/subagent-stop.sh" } ] }
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --quiet python scripts/hooks/hook.py subagent-stop"
+          }
+        ]
+      }
     ]
   }
 }
