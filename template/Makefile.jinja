@@ -71,7 +71,7 @@ format-check:  ## Verify code is formatted (no changes applied)
 {%- if enable_delivery %}
 
 .PHONY: ci
-ci: lint format-check typecheck test constraints budgets spec-coverage  ## Everything CI runs
+ci: lint format-check typecheck test constraints budgets spec-coverage deploy-surface  ## Everything CI runs
 {%- else %}
 
 .PHONY: ci

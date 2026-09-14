@@ -35,7 +35,7 @@ REQUIRED_IGNORES = (
     "*.md",
 )
 EXCLUDED_IN_IMAGE = (".claude/", ".work/", "working/", "docs/", "scripts/", ".github/", "/tests/")
-_COPY_RE = re.compile(r"^\s*(COPY|ADD)\s+(?:--\S+\s+)*(?P<srcs>.+?)\s+\S+\s*$")
+_COPY_RE = re.compile(r"^\s*(COPY|ADD)\s+(?P<flags>(?:--\S+\s+)*)(?P<srcs>.+?)\s+\S+\s*$")
 
 
 def docker_available() -> bool:
@@ -64,6 +64,10 @@ def check_dockerfiles(repo: Path) -> list[str]:
         for i, line in enumerate(df.read_text().splitlines(), start=1):
             m = _COPY_RE.match(line)
             if not m:
+                continue
+            # COPY --from=<stage|image> reads from another build stage, not from the
+            # repository, so its sources are not part of the deploy surface.
+            if "--from=" in m.group("flags"):
                 continue
             for src in m.group("srcs").split():
                 if src.startswith("--"):

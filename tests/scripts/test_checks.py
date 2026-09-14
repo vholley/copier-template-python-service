@@ -248,11 +248,38 @@ class TestDeploySurface:
         assert deploy_surface.main([str(project)]) == 1
         assert "apps/svc/Dockerfile:2: DEPLOY-01" in capsys.readouterr().out
 
+    STAGE_PREFIX = (
+        "FROM python AS builder\n"
+        "COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv\n"
+    )
+
+    def test_stage_copies_are_not_repository_sources(self, project: Path) -> None:
+        """COPY --from=<stage|image> reads from another build stage, not the repo.
+
+        The template's own app-template/Dockerfile copies /uv from the uv image and
+        /build from the builder stage; both were reported as DEPLOY-01 violations,
+        so every generated project failed `make deploy-surface` on its first CI run.
+        """
+        body = self.STAGE_PREFIX + self.GOOD.split("\n", 1)[1]
+        body += "COPY --from=builder --chown=app:app /build /app\n"
+        self._dockerfile(project, body)
+        assert deploy_surface.main([str(project)]) == 0
+
+    def test_stage_copy_does_not_mask_a_real_violation(
+        self, project: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        body = self.STAGE_PREFIX + "COPY working/ /app/working/\n"
+        self._dockerfile(project, body)
+        assert deploy_surface.main([str(project)]) == 1
+        assert "DEPLOY-01" in capsys.readouterr().out
+
     def test_missing_dockerignore_entry_fails(self, project: Path, capsys: pytest.CaptureFixture[str]) -> None:
         self._dockerfile(project, self.GOOD)
         (project / ".dockerignore").write_text(".claude/\n")
         assert deploy_surface.main([str(project)]) == 1
-        assert "DEPLOY-02" in capsys.readouterr().out and "working/" in capsys.readouterr().out or True
+        out = capsys.readouterr().out
+        assert "DEPLOY-02" in out
+        assert "working/" in out
 
     def test_no_docker_skips_image_check_explicitly(self, project: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
         self._dockerfile(project, self.GOOD)
