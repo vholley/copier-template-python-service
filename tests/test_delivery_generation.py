@@ -567,3 +567,36 @@ class TestCopierUpdate:
         assert (project / "working/spec/core.md").read_text() == "# Core\nproject-owned\n"
         assert (project / "working/architecture/constraints.md").read_text() == "# mine\n"
         assert "# upstream change" in (project / "scripts/delivery/block.py").read_text()
+
+
+# ------------------------------------------------------------------- S11 (C13)
+
+
+class TestNewApp:
+    """C13: make new-app produces a compliant member and make ci still passes."""
+
+    def test_new_app_is_compliant(self, delivery_copy: Path) -> None:
+        subprocess.run(["git", "init", "-q", "-b", "develop"], cwd=delivery_copy, check=True)
+        r = subprocess.run(["bash", "scripts/new-app.sh", "worker"], cwd=delivery_copy, capture_output=True, text=True)
+        assert r.returncode == 0, r.stderr
+        member = delivery_copy / "apps/worker"
+        py = (member / "pyproject.toml").read_text()
+        assert "[tool.delivery]" in py and "enabled = true" in py
+        for layer in ("types", "config", "repo", "service", "runtime"):
+            assert (member / "src/worker" / layer / "__init__.py").exists(), layer
+        root = (delivery_copy / "pyproject.toml").read_text()
+        assert "LAYER-worker" in root and '"worker.types"' in root and '"worker"' in root.split("[tool.importlinter]")[1]
+        spec = (delivery_copy / "working/spec/worker.md").read_text()
+        assert "status: unspecified" in spec
+        assert (member / "tests/test_main.py").exists()
+        marker_text = (member / "tests/test_main.py").read_text()
+        assert "@pytest.mark.spec" in marker_text
+
+    def test_new_app_then_ci_passes(self, delivery_copy: Path) -> None:
+        subprocess.run(["git", "init", "-q", "-b", "develop"], cwd=delivery_copy, check=True)
+        subprocess.run(["bash", "scripts/new-app.sh", "worker"], cwd=delivery_copy, check=True, capture_output=True)
+        subprocess.run(["uv", "sync", "--quiet"], cwd=delivery_copy, check=True)
+        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@x", "add", "-A"], cwd=delivery_copy, check=True)
+        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@x", "commit", "-q", "-m", "init"], cwd=delivery_copy, check=True)
+        r = subprocess.run(["make", "ci"], cwd=delivery_copy, capture_output=True, text=True)
+        assert r.returncode == 0, (r.stdout + r.stderr)[-3000:]
