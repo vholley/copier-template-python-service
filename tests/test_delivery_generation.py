@@ -28,10 +28,12 @@ DELIVERY_ONLY_PATHS = [
 
 
 def _tree(root: Path) -> dict[str, bytes]:
+    """Relative path -> bytes, keyed with forward slashes on every platform."""
     out: dict[str, bytes] = {}
     for p in root.rglob("*"):
-        if p.is_file() and ".git/" not in str(p.relative_to(root)) + "/":
-            out[str(p.relative_to(root))] = p.read_bytes()
+        rel = p.relative_to(root).as_posix()
+        if p.is_file() and ".git/" not in rel + "/":
+            out[rel] = p.read_bytes()
     return out
 
 
@@ -53,9 +55,27 @@ class TestDeliveryOff:
             "README.md", "scripts/new-app.sh", ".copier-answers.yml",
             "docs/RATIONALE.md", "docs/DEVELOPING.md", "docs/SETUP.md",  # gain a delivery section (S9)
             "app-template/pyproject.toml",  # gains [tool.delivery] (S11)
+            "app-template/tests/test_main.py",  # gains the spec marker (S11)
         }
         diffs = [p for p, b in plain.items() if p not in replaced and full.get(p) != b]
         assert diffs == []
+
+
+    def test_plain_app_template_has_no_spec_marker(self, plain_project: Path) -> None:
+        """The spec marker is registered only under enable_delivery, and --strict-markers is not.
+
+        A plain project that runs `make new-app` would otherwise fail collection with
+        "'spec' not found in markers configuration option".
+        """
+        text = (plain_project / "app-template/tests/test_main.py").read_text(encoding="utf-8")
+        assert "pytest.mark.spec" not in text
+        assert "import pytest" not in text
+        assert "markers = [" not in (plain_project / "pyproject.toml").read_text(encoding="utf-8")
+
+    def test_delivery_app_template_has_the_spec_marker(self, delivery_project: Path) -> None:
+        text = (delivery_project / "app-template/tests/test_main.py").read_text(encoding="utf-8")
+        assert "pytest.mark.spec" in text
+        assert "markers = [" in (delivery_project / "pyproject.toml").read_text(encoding="utf-8")
 
 
 class TestDeliveryAnswers:
