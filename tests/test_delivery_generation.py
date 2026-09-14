@@ -10,7 +10,8 @@ from pathlib import Path
 
 import yaml
 
-from tests.conftest import TEMPLATE, generate
+from tests.conftest import BASE_ANSWERS, TEMPLATE, generate
+from copier import run_copy
 
 DELIVERY_ONLY_PATHS = [
     "working",
@@ -445,3 +446,124 @@ class TestIssueLog:
         assert run("open").returncode == 0
         text = (delivery_copy / "working/log.md").read_text()
         assert "## L-1" in text and "· closed" in text and "Fix: z" in text
+
+
+# ---------------------------------------------------------------- S10 (C03, C07, C08)
+
+import tomllib as _tomllib
+
+
+def _frontmatter(path: Path) -> dict[str, str]:
+    text = path.read_text()
+    assert text.startswith("---\n"), path
+    block = text.split("---\n", 2)[1]
+    out: dict[str, str] = {}
+    for line in block.splitlines():
+        if ":" in line and not line.startswith(" "):
+            k, _, v = line.partition(":")
+            out[k.strip()] = v.strip()
+    return out
+
+
+class TestClaudeDir:
+    """C07: commands, skills, agents, vendored deslop; budgets and frontmatter."""
+
+    STAGE_SKILLS = ["start", "intent", "clarify", "spec", "plan", "red", "implement", "diagnose",
+                    "architect", "decompose", "review-pr", "entropy-audit", "amend", "opt-out"]
+    AGENTS = ["evaluator", "necessity-reviewer", "spec-reviewer", "explorer"]
+
+    def test_every_registry_entry_has_a_command_file(self, delivery_project: Path) -> None:
+        reg = _tomllib.loads((delivery_project / "working/commands.toml").read_text())
+        names = {c["name"] for c in reg["command"]}
+        files = {p.stem for p in (delivery_project / ".claude/commands").glob("*.md")}
+        assert names <= files, sorted(names - files)
+        assert files <= names, sorted(files - names)
+
+    def test_command_files_have_frontmatter_matching_registry(self, delivery_project: Path) -> None:
+        reg = {c["name"]: c for c in _tomllib.loads((delivery_project / "working/commands.toml").read_text())["command"]}
+        for name, entry in reg.items():
+            fm = _frontmatter(delivery_project / f".claude/commands/{name}.md")
+            assert fm["description"] == entry["description"], name
+
+    def test_stage_skills_exist_with_frontmatter_and_budget(self, delivery_project: Path) -> None:
+        for name in self.STAGE_SKILLS:
+            path = delivery_project / f".claude/skills/{name}/SKILL.md"
+            assert path.exists(), name
+            fm = _frontmatter(path)
+            assert fm.get("name") == name and fm.get("description"), name
+            assert len(path.read_text().splitlines()) <= 200, name
+
+    def test_agents_exist_read_only_except_explorer_writes_nothing(self, delivery_project: Path) -> None:
+        for name in self.AGENTS:
+            path = delivery_project / f".claude/agents/{name}.md"
+            assert path.exists(), name
+            fm = _frontmatter(path)
+            assert fm.get("name") == name and fm.get("description"), name
+            tools = fm.get("tools", "")
+            assert "Write" not in tools and "Edit" not in tools, f"{name} must be read-only"
+
+    def test_evaluator_bash_is_restricted(self, delivery_project: Path) -> None:
+        fm = _frontmatter(delivery_project / ".claude/agents/evaluator.md")
+        assert "Bash(" in fm["tools"] and "Bash," not in fm["tools"] and not fm["tools"].endswith("Bash")
+
+    def test_vendored_deslop_present_and_matches(self, delivery_copy: Path) -> None:
+        assert (delivery_copy / ".claude/skills/deslop/SKILL.md").exists()
+        assert (delivery_copy / ".claude/skills/deslop/references/ai-writing-tells.md").exists()
+        assert "deslop" in (delivery_copy / ".claude/VENDORED.md").read_text()
+        env = {**__import__("os").environ, "PYTHONPATH": "scripts"}
+        assert subprocess.run(["python3", "-m", "delivery.vendored_check", "."], cwd=delivery_copy, env=env).returncode == 0
+
+    def test_ruff_remediation_rule_exists(self, delivery_project: Path) -> None:
+        text = (delivery_project / ".claude/rules/ruff-remediation.md").read_text()
+        assert "C901" in text and "TID251" in text
+
+    def test_registry_help_check_passes(self, delivery_copy: Path) -> None:
+        env = {**__import__("os").environ, "PYTHONPATH": "scripts"}
+        r = subprocess.run(["python3", "-m", "delivery.help", "--check", "."], cwd=delivery_copy, env=env, capture_output=True, text=True)
+        assert r.returncode == 0, r.stdout
+
+
+class TestScriptsUsage:
+    """C08: every script answers --help with its docstring and exits 2 on bad arguments."""
+
+    def test_help_for_every_module(self, delivery_copy: Path) -> None:
+        env = {**__import__("os").environ, "PYTHONPATH": "scripts"}
+        modules = sorted(p.stem for p in (delivery_copy / "scripts/delivery").glob("*.py") if not p.stem.startswith("_"))
+        assert len(modules) >= 25
+        for m in modules:
+            r = subprocess.run(["python3", "-m", "delivery", m, "--help"], cwd=delivery_copy, env=env, capture_output=True, text=True)
+            assert r.returncode == 0 and r.stdout.strip(), m
+
+
+class TestCopierUpdate:
+    """C03 / TPL-02: copier update keeps project-owned files and updates managed ones."""
+
+    def test_update_preserves_owned_and_updates_managed(self, tmp_path: Path) -> None:
+        import shutil as _shutil
+
+        from copier import run_update
+
+        tpl = tmp_path / "tpl"
+        _shutil.copytree(TEMPLATE, tpl, ignore=_shutil.ignore_patterns(".venv", ".git"))
+        subprocess.run(["git", "init", "-q"], cwd=tpl, check=True)
+        g = ["git", "-c", "user.name=t", "-c", "user.email=t@x"]
+        subprocess.run([*g, "add", "-A"], cwd=tpl, check=True)
+        subprocess.run([*g, "commit", "-q", "-m", "v1"], cwd=tpl, check=True)
+        subprocess.run(["git", "tag", "v1.0.0"], cwd=tpl, check=True)
+        project = tmp_path / "proj"
+        run_copy(str(tpl), str(project), data={**BASE_ANSWERS, "enable_delivery": True}, defaults=True, unsafe=True, quiet=True)
+        subprocess.run(["git", "init", "-q"], cwd=project, check=True)
+        subprocess.run([*g, "add", "-A"], cwd=project, check=True)
+        subprocess.run([*g, "commit", "-q", "-m", "generated"], cwd=project, check=True)
+        (project / "working/spec/core.md").write_text("# Core\nproject-owned\n")
+        (project / "working/architecture/constraints.md").write_text("# mine\n")
+        subprocess.run([*g, "add", "-A"], cwd=project, check=True)
+        subprocess.run([*g, "commit", "-q", "-m", "edits"], cwd=project, check=True)
+        script = tpl / "template/scripts/delivery/block.py"
+        script.write_text(script.read_text() + "\n# upstream change\n")
+        subprocess.run([*g, "commit", "-qam", "v2"], cwd=tpl, check=True)
+        subprocess.run(["git", "tag", "v1.1.0"], cwd=tpl, check=True)
+        run_update(str(project), defaults=True, overwrite=True, unsafe=True, quiet=True, skip_answered=True)
+        assert (project / "working/spec/core.md").read_text() == "# Core\nproject-owned\n"
+        assert (project / "working/architecture/constraints.md").read_text() == "# mine\n"
+        assert "# upstream change" in (project / "scripts/delivery/block.py").read_text()
