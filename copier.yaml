@@ -84,8 +84,8 @@ _exclude:
   - "{% if not include_terraform %}infra{% endif %}"
   - "{% if not use_gcp %}libs/shared/src/shared/gcp.py{% endif %}"
   - "{% if not use_gcp or not include_docker %}.github/workflows/deploy.yml{% endif %}"
-  - "{% if not use_gcp or not include_docker %}scripts/tasks/deploy.py{% endif %}"
-  - "{% if not include_terraform %}scripts/tasks/tf_bootstrap.py{% endif %}"
+  - "{% if not use_gcp or not include_docker %}scripts/deploy.sh{% endif %}"
+  - "{% if not include_terraform %}scripts/tf-bootstrap.sh{% endif %}"
   - "{% if not include_terraform or not use_gcp %}.github/workflows/terraform-plan.yml{% endif %}"
   - "{% if not include_terraform or not use_gcp %}.github/workflows/terraform-apply.yml{% endif %}"
   - "{% if not enable_delivery %}working{% endif %}"
@@ -99,7 +99,7 @@ _exclude:
   - "{% if app_framework != 'fastapi' %}.claude/rules/api-design.md{% endif %}"
   - "{% if not enable_delivery %}scripts/delivery{% endif %}"
   - "{% if not enable_delivery %}scripts/hooks{% endif %}"
-  - "{% if not enable_delivery %}scripts/tasks/migrate.py{% endif %}"
+  - "{% if not enable_delivery %}scripts/migrate-to-delivery.sh{% endif %}"
   - "{% if not enable_delivery %}.github/workflows/delivery-checks.yml{% endif %}"
   - "{% if not enable_delivery %}.github/workflows/review-agents.yml{% endif %}"
   - "{% if not enable_delivery %}.github/workflows/spec-draft.yml{% endif %}"
@@ -126,11 +126,39 @@ _message_after_update: |
   Template updated.
   {% if enable_delivery %}If this project was generated before the delivery
   system existed, read MIGRATION.md and run:
-    uv run python scripts/task.py migrate --from <a freshly generated project>
+    scripts/migrate-to-delivery.sh --from <a freshly generated project>
   {% endif %}
 
 # Post-generation tasks
-# copier runs a list-form task without a shell, so this works identically on
-# macOS, Linux and Windows. The logic lives in scripts/copier_post_gen.py.
+# git rev-list -1 HEAD succeeds only when commits exist (i.e. an existing project
+# being updated). On first copy there are no commits yet, so the condition fails
+# and we show the next-steps instructions. Temp dirs used internally by copier
+# during update also have no commits, so they see the echo — harmless since
+# those directories are deleted immediately after.
 _tasks:
-  - ["{{ _copier_python }}", "scripts/copier_post_gen.py"]
+  - "[ -d .git ] || git init -b develop"
+  - >-
+    case "$(basename "$PWD")" in copier._main.*) ;; *)
+    git rev-list -1 HEAD >/dev/null 2>&1 || echo '
+    Generation complete. Next steps:
+      1. cd {{ _copier_conf.dst_path.name }}
+      2. ./scripts/bootstrap.sh
+      3. git add . && git commit -m "chore: initial commit"
+      4. git checkout -b main && git checkout develop
+      5. git remote add origin <your-github-repo-url>
+      6. git push -u origin develop main
+
+      Then configure branch protection and GitHub Environments — see README.md.
+
+      To pull future template updates:
+      copier update --trust --skip-answered
+    '; esac
+  - >-
+    {% if enable_delivery %}case "$(basename "$PWD")" in copier._main.*) ;; *)
+    git rev-list -1 HEAD >/dev/null 2>&1 || echo '
+    Delivery system installed. Two more setup steps:
+      7. make hooks          (installs pre-commit and the Claude Code hooks)
+      8. Register your SSH key as a GitHub signing key and protect it per use
+         (see working/README.md, "Signing acceptances"). Acceptance commits
+         require it; ordinary commits do not.
+    '; esac{% else %}true{% endif %}

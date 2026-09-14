@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Scaffold a new app from app-template/.
+# Usage: scripts/new-app.sh <app_name>
+
+if [[ $# -ne 1 ]]; then
+    echo "Usage: $0 <app_name>" >&2
+    exit 1
+fi
+
+APP_NAME="$1"
+
+# Snake_case validation: app names become Python package names directly.
+if ! [[ "$APP_NAME" =~ ^[a-z][a-z0-9_]*$ ]]; then
+    echo "Error: app name must be snake_case (lowercase letters, digits, underscores; starts with a letter)" >&2
+    echo "Got: $APP_NAME" >&2
+    exit 1
+fi
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+TEMPLATE_DIR="$REPO_ROOT/app-template"
+TARGET_DIR="$REPO_ROOT/apps/$APP_NAME"
+
+if [[ -d "$TARGET_DIR" ]]; then
+    echo "Error: $TARGET_DIR already exists" >&2
+    exit 1
+fi
+
+if [[ ! -d "$TEMPLATE_DIR" ]]; then
+    echo "Error: $TEMPLATE_DIR does not exist" >&2
+    exit 1
+fi
+
+# Copy the template
+cp -r "$TEMPLATE_DIR" "$TARGET_DIR"
+
+# Rename __APP_NAME__ directories (depth-first, in case of nesting)
+find "$TARGET_DIR" -depth -type d -name "__APP_NAME__" | while read -r dir; do
+    mv "$dir" "$(dirname "$dir")/$APP_NAME"
+done
+
+# Replace __APP_NAME__ in file contents (sed -i.bak for macOS portability)
+find "$TARGET_DIR" -type f -exec sed -i.bak "s/__APP_NAME__/$APP_NAME/g" {} \;
+find "$TARGET_DIR" -name "*.bak" -delete
+
+{%- if enable_delivery %}
+
+# Delivery system: a layers contract for the new app and a living-spec skeleton.
+if ! grep -q "LAYER-$APP_NAME:" "$REPO_ROOT/pyproject.toml"; then
+    cat >> "$REPO_ROOT/pyproject.toml" <<CONTRACT
+
+[[tool.importlinter.contracts]]
+name = "LAYER-$APP_NAME: $APP_NAME layers depend forward only (working/architecture/constraints.md#layers)"
+type = "layers"
+layers = [
+    "$APP_NAME.runtime",
+    "$APP_NAME.service",
+    "$APP_NAME.repo",
+    "$APP_NAME.config",
+    "$APP_NAME.types",
+]
+CONTRACT
+    # Register the package with import-linter (root_packages is a list literal on one line).
+    sed -i.bak -E "s/^root_packages = \[(.*)\]/root_packages = [\1, \"$APP_NAME\"]/" "$REPO_ROOT/pyproject.toml"
+    rm -f "$REPO_ROOT/pyproject.toml.bak"
+fi
+mkdir -p "$REPO_ROOT/working/spec"
+if [[ ! -f "$REPO_ROOT/working/spec/$APP_NAME.md" ]]; then
+    cat > "$REPO_ROOT/working/spec/$APP_NAME.md" <<SPEC
+# $APP_NAME
+status: unspecified
+
+Living specification for apps/$APP_NAME. Replace this file with statements
+(one ## heading each, backed by a test marked spec("$APP_NAME.md#<anchor>"))
+and remove the status line. Until then the member is reported as unspecified
+and is not blocked.
+SPEC
+fi
+echo "Delivery: layers contract LAYER-$APP_NAME added; working/spec/$APP_NAME.md created (unspecified)."
+{%- endif %}
+
+echo "Created apps/$APP_NAME"
+echo
+echo "Next: uv sync && make test"

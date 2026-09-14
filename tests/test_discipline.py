@@ -48,7 +48,6 @@ COVERED_BY = {
     "green_runner": "tests/test_delivery_generation.py",
     "writing_check": "tests/test_delivery_generation.py",
     "log": "tests/test_delivery_generation.py",
-    "run": "tests/test_delivery_generation.py",
 }
 
 

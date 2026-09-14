@@ -12,7 +12,7 @@ combinations:
 # 0. The base template on its own, with no delivery system
 copier copy --trust . /tmp/test-plain \
   -d project_name=test-plain -d enable_delivery=false
-cd /tmp/test-plain && uv run python scripts/task.py bootstrap && make ci && cd -
+cd /tmp/test-plain && ./scripts/bootstrap.sh && make ci && cd -
 ```
 
 Then the delivery-enabled combinations:
@@ -21,22 +21,22 @@ Then the delivery-enabled combinations:
 # 1. Generic Python — the default path (minimal, no GCP)
 copier copy --trust . /tmp/test-minimal \
   -d project_name=test-minimal -d use_gcp=false -d app_framework=minimal -d include_docker=false
-cd /tmp/test-minimal && uv run python scripts/task.py bootstrap && make ci && cd -
+cd /tmp/test-minimal && ./scripts/bootstrap.sh && make ci && cd -
 
 # 2. FastAPI, no GCP
 copier copy --trust . /tmp/test-fastapi \
   -d project_name=test-fastapi -d use_gcp=false -d app_framework=fastapi -d include_docker=false
-cd /tmp/test-fastapi && uv run python scripts/task.py bootstrap && make ci && cd -
+cd /tmp/test-fastapi && ./scripts/bootstrap.sh && make ci && cd -
 
 # 3. GCP + FastAPI (full stack)
 copier copy --trust . /tmp/test-gcp \
   -d project_name=test-gcp -d use_gcp=true -d gcp_project_dev=my-project-dev -d gcp_project_prod=my-project-prod -d app_framework=fastapi
-cd /tmp/test-gcp && uv run python scripts/task.py bootstrap && make ci && cd -
+cd /tmp/test-gcp && ./scripts/bootstrap.sh && make ci && cd -
 
 # 4. GCP + minimal
 copier copy --trust . /tmp/test-gcp-min \
   -d project_name=test-gcp-min -d use_gcp=true -d gcp_project_dev=my-project-dev -d gcp_project_prod=my-project-prod -d app_framework=minimal
-cd /tmp/test-gcp-min && uv run python scripts/task.py bootstrap && make ci && cd -
+cd /tmp/test-gcp-min && ./scripts/bootstrap.sh && make ci && cd -
 ```
 
 Clean up after testing:

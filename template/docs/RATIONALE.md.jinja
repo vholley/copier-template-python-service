@@ -73,7 +73,7 @@ The repo is partitioned by what each directory holds:
 - `apps/`: deployable services and jobs. Each subdirectory is a separate Python package and becomes a Cloud Run service or job.
 - `libs/`: shared code, imported by apps. `libs/shared/` is the single shared library today; additional libraries can be extracted as patterns emerge.
 - `infra/`: Terraform configuration for cloud resources.
-- `scripts/`: operational tasks, in Python so they run unchanged on macOS, Linux and Windows (`scripts/task.py` dispatches to `scripts/tasks/`: bootstrap, new-app, deploy, tf-bootstrap, restore).
+- `scripts/`: operational shell scripts (`bootstrap.sh`, `new-app.sh`, `deploy.sh`, `tf-bootstrap.sh`, `restore-from-template.sh`).
 - `app-template/`: scaffold copied by `make new-app`. Not deployed.
 
 The split keeps Python application code separate from infrastructure code, deployment scripts, and the new-app scaffolding. Each has its own tooling lifecycle.
@@ -92,11 +92,11 @@ The split keeps Python application code separate from infrastructure code, deplo
 
 ### app-template
 
-`app-template/` is a directory tree containing the files a new app needs: a `pyproject.toml`, a `main.py`, a tests directory. The files contain `__APP_NAME__` placeholders where the app's name should go. `make new-app NAME=my-service` invokes `scripts/task.py new-app`, which copies the tree to `apps/my-service/` and replaces every `__APP_NAME__` with `my_service` (or whatever you named it).
+`app-template/` is a directory tree containing the files a new app needs: a `pyproject.toml`, a `main.py`, a tests directory. The files contain `__APP_NAME__` placeholders where the app's name should go. `make new-app NAME=my-service` invokes `new-app.sh`, which copies the tree to `apps/my-service/` and replaces every `__APP_NAME__` with `my_service` (or whatever you named it) using `sed`.
 
-Templating happens in two phases. First, copier substitutes Jinja variables (`{{ python_version }}`, `{{ project_name }}`, conditional content) once, when the project is first generated from the template. Second, `scripts/task.py new-app` substitutes `__APP_NAME__` each time you create a new app later. The two phases exist because copier's variables are out of scope by the time the task runs.
+Templating happens in two phases. First, copier substitutes Jinja variables (`{{ python_version }}`, `{{ project_name }}`, conditional content) once, when the project is first generated from the template. Second, `new-app.sh` substitutes `__APP_NAME__` each time you create a new app later. The two phases exist because copier's variables are out of scope by the time `new-app.sh` runs.
 
-`app-template/` is excluded from ruff and pyright. The placeholder files there aren't valid Python until the new-app task runs.
+`app-template/` is excluded from ruff and pyright. The placeholder files there aren't valid Python until `new-app.sh` runs.
 
 ### copier
 
@@ -184,11 +184,11 @@ Infrastructure defined in code is reproducible without tribal knowledge: every e
 ### Per-environment state
 
 {% if use_gcp -%}
-Each environment's Terraform state lives in its own GCS bucket, inside the matching GCP project: dev state in `{{ gcp_project_dev }}-tfstate`, prod state in `{{ gcp_project_prod }}-tfstate`. The `tf-bootstrap` task creates these buckets the first time the project is set up.
+Each environment's Terraform state lives in its own GCS bucket, inside the matching GCP project: dev state in `{{ gcp_project_dev }}-tfstate`, prod state in `{{ gcp_project_prod }}-tfstate`. The `tf-bootstrap.sh` script creates these buckets the first time the project is set up.
 
 State corruption (a bad `terraform apply`, a partially-completed run, an accidentally-edited state file) affects only the environment whose bucket holds it. A mistake in dev cannot break prod. An alternative is to put all state in one ops project; per-environment isolation is simpler when there is no separate ops project.
 {%- else %}
-Each environment's Terraform state lives in a separate remote backend, configured in `infra/terraform/environments/*/backend.tf`. The `tf-bootstrap` task walks through configuring the backend for your chosen provider and running `terraform init`.
+Each environment's Terraform state lives in a separate remote backend, configured in `infra/terraform/environments/*/backend.tf`. The `tf-bootstrap.sh` script walks through configuring the backend for your chosen provider and running `terraform init`.
 
 State corruption (a bad `terraform apply`, a partially-completed run, an accidentally-edited state file) affects only the environment whose backend holds it. A mistake in dev cannot break prod.
 {% endif %}
@@ -215,7 +215,7 @@ Consistent commit message format makes git history scannable and downstream auto
 
 ### Pre-commit
 
-pre-commit is a tool that runs checks ("hooks") against your staged files automatically, every time you run `git commit`. If any hook fails, the commit is rejected and you fix the issues. Hooks are configured in `.pre-commit-config.yaml`. To enable them on your machine, run `pre-commit install` once (the bootstrap task does this); it adds a git hook script that runs pre-commit before each commit.
+pre-commit is a tool that runs checks ("hooks") against your staged files automatically, every time you run `git commit`. If any hook fails, the commit is rejected and you fix the issues. Hooks are configured in `.pre-commit-config.yaml`. To enable them on your machine, run `pre-commit install` once (bootstrap.sh does this); it adds a git hook script that runs pre-commit before each commit.
 
 The configured hooks are ruff (lint and format), pyright (type-check), and several file-hygiene checks (trailing whitespace, end-of-file newlines, YAML syntax). The principle: by the time code reaches review, no one should be commenting on formatting, import order, or unused imports. Reviewers focus on logic and design.
 

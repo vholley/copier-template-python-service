@@ -205,7 +205,7 @@ entropy-audit:  ## LLM stage; run /entropy-audit in Claude Code
 .PHONY: new-app
 new-app:  ## Scaffold a new app: make new-app NAME=<name>
 	@if [ -z "$(NAME)" ]; then echo "Usage: make new-app NAME=<name>"; exit 1; fi
-	@$(UV) run python scripts/task.py new-app "$(NAME)"
+	@./scripts/new-app.sh "$(NAME)"
 	@$(UV) sync
 {%- if include_docker %}
 
@@ -227,7 +227,7 @@ build:  ## Build the Docker image for an app: make build NAME=<name>
 .PHONY: deploy
 deploy:  ## Deploy an app: make deploy NAME=<name> ENV=<dev|prod>
 	@if [ -z "$(NAME)" ] || [ -z "$(ENV)" ]; then echo "Usage: make deploy NAME=<name> ENV=<dev|prod>"; exit 1; fi
-	@$(UV) run python scripts/task.py deploy "$(NAME)" "$(ENV)"
+	@./scripts/deploy.sh "$(NAME)" "$(ENV)"
 {%- endif %}
 {%- if include_terraform %}
 

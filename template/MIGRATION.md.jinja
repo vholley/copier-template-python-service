@@ -5,9 +5,9 @@ new Makefile targets, checks in CI, session hooks for Claude Code, and a new
 `AGENTS.md`. Projects generated from an earlier version can adopt it with
 `copier update --trust --skip-answered` followed by:
 
-    uv run python scripts/task.py migrate --from <a freshly generated project>
+    bash scripts/migrate-to-delivery.sh --from <a freshly generated project>
 
-`--from` is required: the task copies the new directories out of a project
+`--from` is required: the script copies the new directories out of a project
 generated from this template version, so it needs one to copy from. Generate a
 throwaway one next to your project and point at it.
 

@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from tests.conftest import BASE_ANSWERS, PYTHON, TEMPLATE, generate, require_make
+from tests.conftest import BASE_ANSWERS, PYTHON, TEMPLATE, generate, require_bash, require_make
 from copier import run_copy
 
 DELIVERY_ONLY_PATHS = [
@@ -55,13 +55,10 @@ class TestDeliveryOff:
         replaced = {
             "Makefile", "AGENTS.md", ".pre-commit-config.yaml", "pyproject.toml",
             ".github/workflows/ci.yml", ".github/pull_request_template.md",
-            "README.md", ".copier-answers.yml",
+            "README.md", "scripts/new-app.sh", ".copier-answers.yml",
             "docs/RATIONALE.md", "docs/DEVELOPING.md", "docs/SETUP.md",  # gain a delivery section (S9)
             "app-template/pyproject.toml",  # gains [tool.delivery] (S11)
             "app-template/tests/test_main.py",  # gains the spec marker (S11)
-            "scripts/copier_post_gen.py",  # prints the delivery setup steps
-            "scripts/tasks/__init__.py",  # gains the migrate command
-            "scripts/tasks/new_app.py",  # gains the layers contract and spec skeleton
         }
         diffs = [p for p, b in plain.items() if p not in replaced and full.get(p) != b]
         assert diffs == []
@@ -170,55 +167,6 @@ class TestHookEntryPoint:
         assert r.returncode == 0, (r.returncode, r.stdout, r.stderr)
 
 
-class TestTaskParity:
-    """The Makefile is the macOS and Linux interface; scripts/task.py is the Windows one.
-
-    They must offer the same tasks, or a Windows user loses a command silently.
-    """
-
-    def test_every_shell_task_has_a_python_command(self, delivery_project: Path) -> None:
-        import re
-
-        tasks = (delivery_project / "scripts/tasks/__init__.py").read_text(encoding="utf-8")
-        commands = set(re.findall(r'^    "([a-z-]+)": \(', tasks, re.M))
-        assert {"bootstrap", "new-app", "restore", "tf-bootstrap", "migrate"} <= commands
-
-    def test_no_shell_scripts_ship(self, delivery_project: Path) -> None:
-        """Every task is Python, so Windows needs no bash."""
-        assert list(delivery_project.rglob("*.sh")) == []
-
-    def test_makefile_delegates_to_the_task_runner(self, delivery_project: Path) -> None:
-        makefile = (delivery_project / "Makefile").read_text(encoding="utf-8")
-        assert "scripts/task.py new-app" in makefile
-
-    def test_delivery_checks_run_without_env(self, delivery_project: Path) -> None:
-        """pre-commit execs its entry with no shell, so `env PYTHONPATH=...` cannot be used.
-
-        Git ships env.exe in usr/bin, which its installer does not put on PATH, so the
-        old entry failed on Windows outside a Git Bash shell.
-        """
-        r = subprocess.run(
-            [PYTHON, "scripts/delivery/run.py", "constraints"],
-            cwd=delivery_project, capture_output=True, text=True, check=False,
-        )
-        assert "ModuleNotFoundError" not in r.stderr, r.stderr
-        assert r.returncode == 0, r.stdout + r.stderr
-
-    def test_pre_commit_entries_need_no_shell(self, delivery_project: Path) -> None:
-        conf = yaml.safe_load((delivery_project / ".pre-commit-config.yaml").read_text())
-        entries = [h["entry"] for r in conf["repos"] for h in r["hooks"] if "entry" in h]
-        assert [e for e in entries if e.startswith("env ")] == []
-
-    def test_task_runner_lists_its_commands(self, delivery_project: Path) -> None:
-        r = subprocess.run(
-            [PYTHON, "scripts/task.py"], cwd=delivery_project,
-            capture_output=True, text=True, check=False,
-        )
-        assert r.returncode == 0, r.stderr
-        for name in ("bootstrap", "new-app", "restore"):
-            assert name in r.stdout
-
-
 class TestDeliveryAnswers:
     """C02: the delivery answers land in CODEOWNERS and budgets.md; defaults render."""
 
@@ -272,19 +220,12 @@ class TestTasksAndMessage:
                 ]:
             assert pattern in skip, pattern
 
-    def test_tasks_run_without_a_shell(self) -> None:
-        """copier runs a list-form task with shell=False, so cmd.exe never sees it."""
+    def test_tasks_mention_setup_only_when_enabled(self) -> None:
         conf = yaml.safe_load(Path(TEMPLATE, "copier.yaml").read_text())
-        assert all(isinstance(task, list) for task in conf["_tasks"]), conf["_tasks"]
-
-    def test_post_generation_mentions_setup_only_when_enabled(self) -> None:
-        """The instructions moved from copier.yaml's shell tasks into the task script."""
-        text = Path(TEMPLATE, "template/scripts/copier_post_gen.py.jinja").read_text(
-            encoding="utf-8"
-        )
-        assert "enable_delivery" in text
-        assert "make hooks" in text
-        assert "signing" in text.lower()
+        joined = "\n".join(str(t) for t in conf["_tasks"])
+        assert "enable_delivery" in joined
+        assert "make hooks" in joined
+        assert "signing" in joined.lower()
 
 
 class TestGitignore:
@@ -504,7 +445,7 @@ class TestMigration:
 
     def test_migration_doc_exists(self, delivery_project: Path) -> None:
         text = (delivery_project / "MIGRATION.md").read_text()
-        for needle in ("working/", "Makefile", "AGENTS.md", "task.py migrate"):
+        for needle in ("working/", "Makefile", "AGENTS.md", "migrate-to-delivery.sh"):
             assert needle in text, needle
 
     def test_migration_script_creates_working_and_reports(self, plain_project: Path, delivery_project: Path, tmp_path: Path) -> None:
@@ -514,11 +455,8 @@ class TestMigration:
         subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@x", "add", "-A"], cwd=old, check=True)
         subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@x", "commit", "-q", "-m", "init"], cwd=old, check=True)
         (old / "Makefile").write_text((old / "Makefile").read_text() + "\n# local edit\n")
-        r = subprocess.run(
-            [PYTHON, str(delivery_project / "scripts/task.py"), "migrate",
-             "--from", str(delivery_project)],
-            cwd=old, capture_output=True, text=True, check=False,
-        )
+        script = delivery_project / "scripts/migrate-to-delivery.sh"
+        r = subprocess.run([require_bash(), str(script), "--from", str(delivery_project)], cwd=old, capture_output=True, text=True)
         assert r.returncode == 0, r.stderr
         assert (old / "working/standards/budgets.md").exists()
         assert "Makefile" in r.stdout and "modified" in r.stdout
@@ -709,7 +647,7 @@ class TestNewApp:
 
     def test_new_app_is_compliant(self, delivery_copy: Path) -> None:
         subprocess.run(["git", "init", "-q", "-b", "develop"], cwd=delivery_copy, check=True)
-        r = subprocess.run([PYTHON, "scripts/task.py", "new-app", "worker"], cwd=delivery_copy, capture_output=True, text=True)
+        r = subprocess.run([require_bash(), "scripts/new-app.sh", "worker"], cwd=delivery_copy, capture_output=True, text=True)
         assert r.returncode == 0, r.stderr
         member = delivery_copy / "apps/worker"
         py = (member / "pyproject.toml").read_text()
@@ -726,7 +664,7 @@ class TestNewApp:
 
     def test_new_app_then_ci_passes(self, delivery_copy: Path) -> None:
         subprocess.run(["git", "init", "-q", "-b", "develop"], cwd=delivery_copy, check=True)
-        subprocess.run([PYTHON, "scripts/task.py", "new-app", "worker"], cwd=delivery_copy, check=True, capture_output=True)
+        subprocess.run([require_bash(), "scripts/new-app.sh", "worker"], cwd=delivery_copy, check=True, capture_output=True)
         subprocess.run(["uv", "sync", "--quiet"], cwd=delivery_copy, check=True)
         subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@x", "add", "-A"], cwd=delivery_copy, check=True)
         subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@x", "commit", "-q", "-m", "init"], cwd=delivery_copy, check=True)

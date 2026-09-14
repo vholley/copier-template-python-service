@@ -12,7 +12,7 @@ Within a member, code depends forward only: types → config → repo → servic
 Cross-cutting concerns (logging, telemetry) enter through a single provider module.
 
 - LAYER-<app> (check: importlinter LAYER-<app>): each app declares its layers contract
-  in `pyproject.toml` (the new-app task writes it).
+  in `pyproject.toml` (`scripts/new-app.sh` writes it).
 
 ## Invariants
 
