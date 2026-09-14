@@ -35,17 +35,15 @@ def _repo(argv: list[str], flags: tuple[str, ...]) -> Path:
 
 def entries(text: str) -> list[dict[str, str]]:
     """Parsed entries in file order."""
-    out: list[dict[str, str]] = []
-    for m in _HEAD.finditer(text):
-        out.append(
-            {
-                "id": m.group("id"),
-                "date": m.group("date"),
-                "source": m.group("source"),
-                "status": m.group("status"),
-            }
-        )
-    return out
+    return [
+        {
+            "id": m.group("id"),
+            "date": m.group("date"),
+            "source": m.group("source"),
+            "status": m.group("status"),
+        }
+        for m in _HEAD.finditer(text)
+    ]
 
 
 def add(repo: Path, source: str, what: str, missing: str, fix: str) -> str:
@@ -60,7 +58,10 @@ def add(repo: Path, source: str, what: str, missing: str, fix: str) -> str:
     lid = f"L-{(max(ids) if ids else 0) + 1}"
     today = datetime.now(UTC).date().isoformat()
     status = "closed" if fix else "open"
-    entry = f"\n## {lid} · {today} · {source} · {status}\nWhat happened: {what}\nWhich definition was missing: {missing}\n"
+    entry = (
+        f"\n## {lid} · {today} · {source} · {status}\n"
+        f"What happened: {what}\nWhich definition was missing: {missing}\n"
+    )
     entry += f"Fix: {fix} Closed {today}.\n" if fix else "Fix: (open)\n"
     path.write_text(text.rstrip("\n") + "\n" + entry)
     return lid
