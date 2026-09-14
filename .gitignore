@@ -1,3 +1,8 @@
+# Claude Code's local settings for this checkout. Anchored to the root so the
+# template's own .claude/ (which ships to generated projects) stays tracked.
+# This repository does not run the delivery process on itself.
+/.claude/
+
 # Python build artifacts
 __pycache__/
 *.py[cod]

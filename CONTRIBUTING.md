@@ -58,3 +58,18 @@ Non-breaking: adding new questions (they get defaults), adding new files, editin
 ## Documentation
 
 Update `docs/RATIONALE.md.jinja` alongside any structural change (new tool, new pattern, removed component). RATIONALE explains *why* each choice was made; it should stay current with the template.
+
+## Commit conventions
+
+Commits carry no LLM co-author trailer. Each commit is one contributor's, and the
+author field says who that is. If a tool helped write it, that is between you and
+the tool -- the history records the person accountable for the change, not the
+means.
+
+CI enforces it:
+
+```sh
+git log origin/main..HEAD --format=%B | grep -q Co-Authored-By && exit 1
+```
+
+Messages follow Conventional Commits, as the generated projects do.

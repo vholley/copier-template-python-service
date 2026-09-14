@@ -24,6 +24,19 @@ jobs:
       - run: uv sync --locked
       - run: uv run pytest tests/ -v
 
+  commit-trailers:
+    name: Commit trailers
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # Each commit is one contributor's; see CONTRIBUTING.md.
+      - name: No LLM co-author trailers
+        run: |
+          git log origin/main..HEAD --format=%B | grep -q Co-Authored-By && exit 1
+          echo "no co-author trailers"
+
   template-ci:
     name: Template CI / ${{ matrix.label }}
     runs-on: ubuntu-latest
