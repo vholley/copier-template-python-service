@@ -44,6 +44,42 @@ done
 find "$TARGET_DIR" -type f -exec sed -i.bak "s/__APP_NAME__/$APP_NAME/g" {} \;
 find "$TARGET_DIR" -name "*.bak" -delete
 
+{%- if enable_delivery %}
+
+# Delivery system: a layers contract for the new app and a living-spec skeleton.
+if ! grep -q "LAYER-$APP_NAME:" "$REPO_ROOT/pyproject.toml"; then
+    cat >> "$REPO_ROOT/pyproject.toml" <<CONTRACT
+
+[[tool.importlinter.contracts]]
+name = "LAYER-$APP_NAME: $APP_NAME layers depend forward only (working/architecture/constraints.md#layers)"
+type = "layers"
+layers = [
+    "$APP_NAME.runtime",
+    "$APP_NAME.service",
+    "$APP_NAME.repo",
+    "$APP_NAME.config",
+    "$APP_NAME.types",
+]
+CONTRACT
+    # Register the package with import-linter (root_packages is a list literal on one line).
+    sed -i.bak -E "s/^root_packages = \[(.*)\]/root_packages = [\1, \"$APP_NAME\"]/" "$REPO_ROOT/pyproject.toml"
+    rm -f "$REPO_ROOT/pyproject.toml.bak"
+fi
+mkdir -p "$REPO_ROOT/working/spec"
+if [[ ! -f "$REPO_ROOT/working/spec/$APP_NAME.md" ]]; then
+    cat > "$REPO_ROOT/working/spec/$APP_NAME.md" <<SPEC
+# $APP_NAME
+status: unspecified
+
+Living specification for apps/$APP_NAME. Replace this file with statements
+(one ## heading each, backed by a test marked spec("$APP_NAME.md#<anchor>"))
+and remove the status line. Until then the member is reported as unspecified
+and is not blocked.
+SPEC
+fi
+echo "Delivery: layers contract LAYER-$APP_NAME added; working/spec/$APP_NAME.md created (unspecified)."
+{%- endif %}
+
 echo "Created apps/$APP_NAME"
 echo
 echo "Next: uv sync && make test"

@@ -24,3 +24,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/__APP_NAME__"]
+{%- if enable_delivery %}
+
+[tool.delivery]
+enabled = true
+# test = "uv run pytest apps/__APP_NAME__"   # override when this app uses a different runner
+{%- endif %}

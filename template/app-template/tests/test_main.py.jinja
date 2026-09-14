@@ -1,9 +1,11 @@
 """Tests for __APP_NAME__.main."""
 
+import pytest
 {% if app_framework == "fastapi" -%}
 from __APP_NAME__.main import healthz
 
 
+@pytest.mark.spec("__APP_NAME__.md#health-check")
 def test_healthz_returns_ok() -> None:
     """healthz returns an ok status payload."""
     assert healthz() == {"status": "ok"}
@@ -11,6 +13,7 @@ def test_healthz_returns_ok() -> None:
 from __APP_NAME__.main import main
 
 
+@pytest.mark.spec("__APP_NAME__.md#runs")
 def test_main_callable() -> None:
     """main is callable without raising."""
     main()
