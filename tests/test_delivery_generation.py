@@ -999,6 +999,90 @@ class TestCopierUpdate:
 # ------------------------------------------------------------------- S11 (C13)
 
 
+class TestPkg01FollowsTheApps:
+    """A contract naming no apps forbids nothing; it only looks like a rule.
+
+    PKG-01 shipped as `forbidden_modules = []`, which import-linter accepts and
+    which permits every import it names in its own title. The rule it stands for --
+    libs do not import apps -- cannot be written before an app exists, so new-app
+    writes it with the first one and extends it with each one after.
+    """
+
+    def _pyproject(self, project: Path) -> str:
+        return (project / "pyproject.toml").read_text(encoding="utf-8")
+
+    def _forbidden(self, project: Path) -> list[str]:
+        body = self._pyproject(project).split('name = "PKG-01')[1]
+        line = next(
+            ln for ln in body.splitlines() if ln.startswith("forbidden_modules")
+        )
+        return _re.findall(r'"([^"]+)"', line)
+
+    def _new_app(self, project: Path, name: str) -> None:
+        r = subprocess.run(
+            [require_bash(), "scripts/new-app.sh", name],
+            cwd=project, capture_output=True, text=True, check=False,
+        )
+        assert r.returncode == 0, r.stderr
+
+    @pytest.fixture
+    def repo(self, delivery_copy: Path) -> Path:
+        subprocess.run(["git", "init", "-q", "-b", "develop"], cwd=delivery_copy, check=True)
+        return delivery_copy
+
+    def test_a_fresh_project_has_no_pkg01(self, delivery_project: Path) -> None:
+        """The contract, not the word: a comment explains where it comes from."""
+        assert 'name = "PKG-01' not in self._pyproject(delivery_project)
+
+    def test_lint_imports_passes_before_any_app(self, repo: Path) -> None:
+        """Removing the contract must not leave import-linter with nothing to do."""
+        subprocess.run(["uv", "sync", "--quiet"], cwd=repo, check=True)
+        r = subprocess.run(
+            ["uv", "run", "lint-imports"], cwd=repo, capture_output=True, text=True, check=False
+        )
+        assert r.returncode == 0, r.stdout + r.stderr
+
+    def test_the_first_app_writes_the_contract(self, repo: Path) -> None:
+        self._new_app(repo, "worker")
+        body = self._pyproject(repo).split('name = "PKG-01')[1]
+        assert 'type = "forbidden"' in body
+        assert 'source_modules = ["shared"]' in body
+        assert self._forbidden(repo) == ["worker"]
+
+    def test_the_second_app_is_added_to_it(self, repo: Path) -> None:
+        self._new_app(repo, "worker")
+        self._new_app(repo, "api")
+        assert self._forbidden(repo) == ["worker", "api"]
+        assert self._pyproject(repo).count('name = "PKG-01') == 1
+
+    def test_lint_imports_passes_with_apps(self, repo: Path) -> None:
+        self._new_app(repo, "worker")
+        subprocess.run(["uv", "sync", "--quiet"], cwd=repo, check=True)
+        r = subprocess.run(
+            ["uv", "run", "lint-imports"], cwd=repo, capture_output=True, text=True, check=False
+        )
+        assert r.returncode == 0, r.stdout + r.stderr
+
+    def test_a_lib_importing_an_app_is_caught(self, repo: Path) -> None:
+        """The contract has to fail something, or it is decoration again."""
+        self._new_app(repo, "worker")
+        subprocess.run(["uv", "sync", "--quiet"], cwd=repo, check=True)
+        offender = repo / "libs/shared/src/shared/leak.py"
+        offender.write_text("import worker.types\n", encoding="utf-8")
+        r = subprocess.run(
+            ["uv", "run", "lint-imports"], cwd=repo, capture_output=True, text=True, check=False
+        )
+        assert r.returncode != 0, r.stdout
+        assert "PKG-01" in r.stdout
+
+    def test_the_constraint_says_who_writes_it(self, delivery_project: Path) -> None:
+        text = (
+            delivery_project / "working/architecture/constraints.md"
+        ).read_text(encoding="utf-8")
+        line = next(ln for ln in text.splitlines() if "PKG-01" in ln)
+        assert "new-app" in line, line
+
+
 class TestNewApp:
     """C13: make new-app produces a compliant member and make ci still passes."""
 
