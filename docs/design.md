@@ -6,6 +6,11 @@ Status of this document: core and Appendix B are complete for Python 3.14 manage
 
 Field claims (review-time data, harness results, practitioner patterns) are cited with URLs in the companion overview document's References section. Claude Code facts in this document were checked against the official references on 2026-09-11: hooks (https://code.claude.com/docs/en/hooks), GitHub Actions (https://code.claude.com/docs/en/github-actions), plugins via the Agent SDK reference (https://platform.claude.com/docs/en/agent-sdk/plugins). Event names, exit-code semantics, and settings precedence should be re-checked against those pages before implementation, since they change between releases.
 
+The build that implemented this design, and the review that followed it, are recorded in
+`docs/history/template-v2/`: intent, clarification, spec and criteria, plan, the decision
+log (D1 to D44, extending the register below), and the issue log. Reference material, not
+tests -- this repository is a template and does not run the delivery process on itself.
+
 ---
 
 ## 0. Decision register
