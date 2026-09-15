@@ -128,12 +128,17 @@ class TestHookEntryPoint:
 
     @pytest.fixture
     def project(self, delivery_copy: Path) -> Path:
-        """The copy as a real repository: the hooks read git state, as they would in use."""
-        git = ["git", "-c", "user.name=t", "-c", "user.email=t@example.invalid"]
-        subprocess.run(["git", "init", "-q", "-b", "develop"], cwd=delivery_copy, check=True)
-        subprocess.run(["git", "symbolic-ref", "HEAD", "refs/heads/develop"], cwd=delivery_copy, check=True)
-        subprocess.run([*git, "add", "-A"], cwd=delivery_copy, capture_output=True, check=True)
-        subprocess.run([*git, "commit", "-q", "-m", "chore: init"], cwd=delivery_copy, check=True)
+        """Generation leaves a committed repository, so the copy is already one.
+
+        The hooks read git state; before the scaffold commit existed this fixture
+        had to create it by hand.
+        """
+        assert (delivery_copy / ".git").is_dir(), "generation did not initialise a repository"
+        head = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=delivery_copy, capture_output=True, text=True, check=True,
+        ).stdout.strip()
+        assert head == "develop", head
         return delivery_copy
 
     def _run(self, project: Path, event: str, payload: str) -> subprocess.CompletedProcess[str]:
@@ -165,6 +170,63 @@ class TestHookEntryPoint:
         payload = json.dumps({"tool_input": {"file_path": str(target)}})
         r = self._run(project, "edit", payload)
         assert r.returncode == 0, (r.returncode, r.stdout, r.stderr)
+
+
+class TestScaffoldCommit:
+    """Generation leaves a committed repository, not a dirty working tree.
+
+    A fresh project has no commits, so `git rev-parse HEAD` fails and anything
+    that reads the branch raises. The engineer's first act had to be a direct
+    commit to develop, which branching.md forbids and which no pull request can
+    cover, because there is no base to open one against.
+    """
+
+    SUBJECT = "chore: generate from copier-template-python-service"
+
+    def _git(self, project: Path, *args: str) -> str:
+        return subprocess.run(
+            ["git", *args], cwd=project, capture_output=True, text=True, check=True
+        ).stdout.strip()
+
+    def test_generation_leaves_exactly_one_commit(self, delivery_project: Path) -> None:
+        assert self._git(delivery_project, "rev-list", "--count", "HEAD") == "1"
+
+    def test_the_commit_is_on_develop(self, delivery_project: Path) -> None:
+        assert self._git(delivery_project, "rev-parse", "--abbrev-ref", "HEAD") == "develop"
+
+    def test_the_commit_has_the_scaffold_subject(self, delivery_project: Path) -> None:
+        assert self._git(delivery_project, "log", "-1", "--format=%s") == self.SUBJECT
+
+    def test_the_commit_is_authored_by_the_generating_user(self, delivery_project: Path) -> None:
+        """Not by the template, and not by a placeholder: the engineer owns it."""
+        expected_name = self._git(delivery_project, "config", "user.name")
+        expected_email = self._git(delivery_project, "config", "user.email")
+        assert self._git(delivery_project, "log", "-1", "--format=%an") == expected_name
+        assert self._git(delivery_project, "log", "-1", "--format=%ae") == expected_email
+
+    def test_nothing_is_left_uncommitted(self, delivery_project: Path) -> None:
+        assert self._git(delivery_project, "status", "--porcelain") == ""
+
+    def test_status_runs_and_reports_no_work_item(self, delivery_project: Path) -> None:
+        """`make status` is a one-line wrapper over this; the module is what it runs."""
+        env = {**__import__("os").environ, "PYTHONPATH": "scripts"}
+        r = subprocess.run(
+            [PYTHON, "-m", "delivery.status"],
+            cwd=delivery_project, env=env, capture_output=True, text=True, check=False,
+        )
+        assert r.returncode == 0, r.stdout + r.stderr
+        assert "Traceback" not in r.stderr, r.stderr
+        assert "no work item" in (r.stdout + r.stderr).lower()
+
+    def test_makefile_status_target_calls_it(self, delivery_project: Path) -> None:
+        makefile = (delivery_project / "Makefile").read_text(encoding="utf-8")
+        assert _re.search(r"^status:", makefile, _re.M)
+        assert "delivery.status" in makefile or "$(DELIVERY).status" in makefile
+
+    def test_plain_project_is_committed_too(self, plain_project: Path) -> None:
+        """The scaffold commit is not a delivery-system feature."""
+        assert self._git(plain_project, "rev-list", "--count", "HEAD") == "1"
+        assert self._git(plain_project, "log", "-1", "--format=%s") == self.SUBJECT
 
 
 class TestDeliveryAnswers:
@@ -450,10 +512,9 @@ class TestMigration:
 
     def test_migration_script_creates_working_and_reports(self, plain_project: Path, delivery_project: Path, tmp_path: Path) -> None:
         old = tmp_path / "old"
+        # The copy is already a repository with the scaffold commit, so the
+        # script can report which template-replaced files were edited since.
         shutil.copytree(plain_project, old)
-        subprocess.run(["git", "init", "-q"], cwd=old, check=True)
-        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@x", "add", "-A"], cwd=old, check=True)
-        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@x", "commit", "-q", "-m", "init"], cwd=old, check=True)
         (old / "Makefile").write_text((old / "Makefile").read_text() + "\n# local edit\n")
         script = delivery_project / "scripts/migrate-to-delivery.sh"
         r = subprocess.run([require_bash(), str(script), "--from", str(delivery_project)], cwd=old, capture_output=True, text=True)
@@ -621,10 +682,9 @@ class TestCopierUpdate:
         subprocess.run([*g, "tag", "v1.0.0"], cwd=tpl, check=True)
         project = tmp_path / "proj"
         run_copy(str(tpl), str(project), data={**BASE_ANSWERS, "enable_delivery": True}, defaults=True, unsafe=True, quiet=True)
-        subprocess.run(["git", "init", "-q"], cwd=project, check=True)
+        # run_copy runs the template's tasks, so the project is already a
+        # repository with the scaffold commit on develop.
         subprocess.run([*g, "config", "gc.auto", "0"], cwd=project, check=True)
-        subprocess.run([*g, "add", "-A"], cwd=project, check=True)
-        subprocess.run([*g, "commit", "-q", "-m", "generated"], cwd=project, check=True)
         (project / "working/spec/core.md").write_text("# Core\nproject-owned\n")
         (project / "working/architecture/constraints.md").write_text("# mine\n")
         subprocess.run([*g, "add", "-A"], cwd=project, check=True)
