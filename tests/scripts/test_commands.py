@@ -79,7 +79,7 @@ def project(repo: Path, tmp_path: Path) -> Path:
 class TestStart:
     def test_offers_on_clean_develop(self, established: Path) -> None:
         assert start.offers(established) == [
-            "quick-change", "change", "bug-fix", "explore", "opt-out",
+            "quick-change", "change", "bug-fix", "explore", "process-change", "opt-out",
         ]
 
     def test_offers_on_bound_branch(self, project: Path) -> None:
@@ -505,7 +505,9 @@ class TestSetUpAnswer:
     and nothing created one, so the workflow that sets a project up had no door.
     """
 
-    FRESH_OFFERS = ["set-up", "quick-change", "change", "bug-fix", "explore", "opt-out"]
+    FRESH_OFFERS = [
+        "set-up", "quick-change", "change", "bug-fix", "explore", "process-change", "opt-out",
+    ]
 
     def test_set_up_is_offered_first(self, fresh: Path) -> None:
         assert start.offers(fresh)[0] == "set-up"
@@ -570,3 +572,54 @@ class TestSetUpAnswer:
     def test_it_is_not_offered_once_bound(self, fresh: Path) -> None:
         start.main(["--answer", "set-up", "--ticket", "SETUP-1", fresh.as_posix()])
         assert start.offers(fresh) == ["continue", "abandon"]
+
+
+class TestProcessChangeAnswer:
+    """Changing the process is itself work, and it needs an item to be reviewable.
+
+    The protected-path guard tells the agent to hand the edit to the engineer. That
+    is the right answer for a stray edit and the wrong one for deliberate work on
+    the process, which then had no route at all: no item, no branch, no pull
+    request. process-change opens one.
+    """
+
+    def test_it_is_offered_on_a_clean_branch(self, established: Path) -> None:
+        assert "process-change" in start.offers(established)
+
+    def test_it_is_offered_on_a_fresh_project_too(self, fresh: Path) -> None:
+        assert "process-change" in start.offers(fresh)
+
+    def test_it_is_not_offered_while_an_item_is_bound(self, established: Path) -> None:
+        start.main(["--answer", "change", "--ticket", "PROJ-1", established.as_posix()])
+        assert "process-change" not in start.offers(established)
+
+    def test_it_has_a_description(self, established: Path) -> None:
+        assert start.ANSWERS["process-change"]
+
+    def test_it_creates_a_project_item(self, established: Path) -> None:
+        code = start.main(
+            ["--answer", "process-change", "--ticket", "PROC-1", established.as_posix()]
+        )
+        assert code == 0
+        st = state.read(established, "PROC-1")
+        assert st.workflow == "project"
+        assert st.stage == "intent"
+
+    def test_it_drafts_from_the_process_template(self, established: Path) -> None:
+        tpl = established / start.PROCESS_INTENT_TEMPLATE
+        tpl.parent.mkdir(parents=True, exist_ok=True)
+        tpl.write_text(
+            "# Intent: <title>" + chr(10) + "id: <work-id>" + chr(10)
+            + "workflow: project" + chr(10) + chr(10) + "## Which rule" + chr(10),
+            encoding="utf-8",
+        )
+        start.main(["--answer", "process-change", "--ticket", "PROC-1", established.as_posix()])
+        text = (established / ".work/PROC-1/intent.md").read_text(encoding="utf-8")
+        assert "## Which rule" in text
+        assert "<work-id>" not in text
+
+    def test_it_needs_a_ticket(
+        self, established: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        assert start.main(["--answer", "process-change", established.as_posix()]) == 1
+        assert "ticket" in capsys.readouterr().err

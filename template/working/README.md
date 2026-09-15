@@ -131,10 +131,10 @@ whenever something disagrees.
 
 ## Protected paths {#protected}
 
-The agent cannot edit `working/architecture/`, `working/standards/`,
-`.claude/`, `scripts/`, or `.github/` in a session. Change them in a pull
-request. Tests and the living spec are not blocked; the ratchet and review
-protect those.
+The agent cannot edit `working/architecture/`, `working/standards/`, `.claude/`,
+`scripts/`, or `.github/` in a session unless the branch is bound to a project
+item; `make start` (set-up or process-change) opens one and its pull request is
+the review. Tests and the living spec are never blocked.
 
 ## Deployable surface {#deploy}
 

@@ -21,6 +21,7 @@ ANSWERS = {
     "change": "Add or change behavior",
     "bug-fix": "Fix a bug",
     "explore": "Explore first (a spike; nothing merges from it)",
+    "process-change": "Change the process itself (rules, standards, architecture, scripts)",
     "opt-out": "Do not use the process for this work",
     "continue": "Continue the current work item",
     "abandon": "Abandon the current work item",
@@ -34,8 +35,21 @@ WORKFLOW_FOR = {
     "change": "change",
     "bug-fix": "change-defect",
     "explore": "spike",
+    "process-change": "project",
 }
-PROJECT_INTENT_TEMPLATE = Path(".claude/skills/intent/templates/intent-project.md")
+_TEMPLATES = Path(".claude/skills/intent/templates")
+PROJECT_INTENT_TEMPLATE = _TEMPLATES / "intent-project.md"
+PROCESS_INTENT_TEMPLATE = _TEMPLATES / "intent-process.md"
+TEMPLATE_FOR = {
+    "set-up": PROJECT_INTENT_TEMPLATE,
+    "process-change": PROCESS_INTENT_TEMPLATE,
+}
+NEXT_FOR = {
+    "set-up": "Next: /intent, then /architect",
+    "process-change": (
+        "Next: /intent. Process files are editable on this branch; its pull request is the review."
+    ),
+}
 MORE = "working/README.md#start"
 
 
@@ -71,7 +85,7 @@ def offers(repo: Path) -> list[str]:
         )
     if branch not in ("develop", "main") and _has_changes(repo):
         return ["quick-change", "attach"]
-    base = ["quick-change", "change", "bug-fix", "explore", "opt-out"]
+    base = ["quick-change", "change", "bug-fix", "explore", "process-change", "opt-out"]
     return ["set-up", *base] if _is_fresh(repo) else base
 
 
@@ -82,18 +96,19 @@ _PROJECT_FALLBACK = (
 )
 
 
-def _project_intent(repo: Path, item: str) -> str:
+def _project_intent(repo: Path, item: str, template: Path) -> str:
     """The stub for a project item, from the intent skill's template when it ships."""
-    tpl = repo / PROJECT_INTENT_TEMPLATE
+    tpl = repo / template
     text = tpl.read_text(encoding="utf-8") if tpl.exists() else _PROJECT_FALLBACK
     return text.replace("<work-id>", item).replace("<title>", item)
 
 
-def _draft_intent(repo: Path, item: str, notes: str = "") -> None:
+def _draft_intent(repo: Path, item: str, notes: str = "", template: Path | None = None) -> None:
     d = state.item_dir(repo, item)
     workflow = state.load_unchecked(repo, item).workflow
     if workflow == "project":
-        (d / "intent.md").write_text(_project_intent(repo, item), encoding="utf-8")
+        tpl = template or PROJECT_INTENT_TEMPLATE
+        (d / "intent.md").write_text(_project_intent(repo, item, tpl), encoding="utf-8")
         return
     body = (
         f"# Intent: {item}\nid: {item}\nworkflow: {workflow}\nrisk: standard\n\n"
@@ -147,8 +162,8 @@ def _new_item(answer: str) -> Callable[[Path, str | None], int]:
                 "run make start when you know what to build."
             )
         elif workflow == "project":
-            _draft_intent(repo, ticket)
-            print(f"Project {ticket} on branch {ticket}. Next: /intent, then /architect")
+            _draft_intent(repo, ticket, template=TEMPLATE_FOR[answer])
+            print(f"Project {ticket} on branch {ticket}. {NEXT_FOR[answer]}")
         else:
             _draft_intent(repo, ticket)
             print(f"Work item {ticket} on branch {ticket}. Next: /intent")
@@ -219,6 +234,7 @@ def _noop(_repo: Path, _ticket: str | None) -> int:
 
 ACTIONS: dict[str, Callable[[Path, str | None], int]] = {
     "set-up": _new_item("set-up"),
+    "process-change": _new_item("process-change"),
     "quick-change": _quick_change,
     "change": _new_item("change"),
     "bug-fix": _new_item("bug-fix"),

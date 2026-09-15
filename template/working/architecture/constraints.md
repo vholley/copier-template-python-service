@@ -29,7 +29,9 @@ when listed here. Available in `scripts/delivery/constraints.py`:
 ## Protected paths
 
 Changed only through a reviewed pull request; the agent cannot edit them in a session
-(the test ratchet and review protect tests and the living spec instead).
+(the test ratchet and review protect tests and the living spec instead). A branch bound
+to a `project` item is that pull request, so the guard allows these edits there: `make
+start` offers set-up for a new project and process-change for the process itself.
 
 - working/architecture/**
 - working/standards/**

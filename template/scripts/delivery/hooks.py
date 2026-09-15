@@ -192,15 +192,21 @@ def edit(payload: dict[str, object], repo: Path) -> tuple[int, str, str]:
             ["make status", "make rebuild ID=<id>"],
             "state",
         )
-    if _protected(repo, rel):
+    item, st = _bound(repo)
+    # The rule is that process-defining files change through a reviewed pull
+    # request. A project item is one: it has a branch, an intent the engineer
+    # signs, and a pull request that reviews the whole of it. So the guard asks
+    # what the branch is bound to before refusing, and /architect can write the
+    # architecture it exists to produce.
+    if _protected(repo, rel) and (st is None or st.workflow != "project"):
         return _exit(
             "protected",
             f"{rel} is a protected path",
-            "process-defining files change only through a reviewed pull request",
-            ["describe the change to the engineer; they edit it in their own session"],
+            "process-defining files change through a project or process-change item, "
+            "whose pull request is the review",
+            ["make start  (choose process-change)"],
             "protected",
         )
-    item, st = _bound(repo)
     if st is None or st.workflow == "spike" or not SRC_RE.match(rel):
         return 0, "", ""
     if (

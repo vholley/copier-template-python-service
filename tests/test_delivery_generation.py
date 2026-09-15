@@ -348,9 +348,24 @@ class TestSetUpShipsWithTheProject:
         assert tpl.exists()
         assert "workflow: project" in tpl.read_text(encoding="utf-8")
 
-    def test_the_intent_skill_names_it(self, delivery_project: Path) -> None:
+    def test_the_process_intent_template_ships(self, delivery_project: Path) -> None:
+        tpl = delivery_project / ".claude/skills/intent/templates/intent-process.md"
+        assert tpl.exists()
+        assert "workflow: project" in tpl.read_text(encoding="utf-8")
+
+    def test_the_intent_skill_names_both(self, delivery_project: Path) -> None:
         skill = (delivery_project / ".claude/skills/intent/SKILL.md").read_text(encoding="utf-8")
         assert "intent-project.md" in skill
+        assert "intent-process.md" in skill
+
+    def test_the_protected_rule_names_the_exception(self, delivery_project: Path) -> None:
+        """The README and the constraints file must not contradict the guard."""
+        readme = (delivery_project / "working/README.md").read_text(encoding="utf-8")
+        constraints = (
+            delivery_project / "working/architecture/constraints.md"
+        ).read_text(encoding="utf-8")
+        assert "process-change" in readme
+        assert "project" in constraints.split("## Protected paths")[1].split("## ")[0]
 
     def test_start_offers_it_on_a_fresh_project(self, delivery_copy: Path) -> None:
         """End to end: generation leaves a project with no members, so it is offered."""
