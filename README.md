@@ -4,7 +4,7 @@ A copier template for Python projects. Generates a project with uv-managed depen
 
 ## Prerequisites
 
-- macOS, Linux, or Windows (WSL 2 recommended for shell scripts on Windows)
+- macOS or Linux. On Windows, use WSL 2: the project's scripts and `make` targets are POSIX, and WSL runs them natively.
 - **uv** installed — manages Python and dependencies
 
   macOS / Linux:
@@ -112,8 +112,33 @@ copier asks the following questions:
 | `gcp_project_prod` | (required if `use_gcp`) | E.g. `my-project-prod` |
 | `include_docker` | `false` | Adds Dockerfile and container build targets |
 | `include_terraform` | `false` | Adds `infra/terraform/` scaffolding; Terraform CI workflows require `use_gcp` |
+| `enable_delivery` | `true` | Installs the delivery system: `working/`, the `.claude/` process, delivery checks and workflows |
+| `owner_group` | (empty) | GitHub handle auto-requested for review on protected paths, e.g. `@org/platform`. Empty means no CODEOWNERS |
+| `high_risk_paths` | `["**/auth/**", "**/migrations/**"]` | Globs that require a second reviewer |
+| `trivial_paths` | `["docs/**", "*.md", ...]` | Globs eligible for a trivial change with no work item |
 
 After generation, `cd` into the new project and run `./scripts/bootstrap.sh` to install tooling and verify the environment.
+
+## The delivery system
+
+`enable_delivery` defaults to `true`. It installs a process for building software with an
+AI coding agent, on top of the base toolchain:
+
+- `working/`: the living spec, architecture constraints, standards and budgets. Tracked, and
+  owned by the project after first generation — `copier update` never rewrites it.
+- `.claude/`: 26 commands, 14 skills, 4 read-only review agents, path-scoped rules, and the
+  session hooks that enforce the stages.
+- `scripts/delivery/`: the checks — constraints, budgets, spec coverage, the test ratchet, the
+  PR contract, the deployable surface.
+- Five CI workflows: delivery checks, review agents, spec drafting, post-merge and an entropy
+  audit.
+
+Answer `enable_delivery: false` for the base template on its own: uv workspace, ruff, pyright,
+pytest, pre-commit and CI, with none of the process. That is what earlier versions of this
+template produced.
+
+Generated projects get `docs/DELIVERY-SYSTEM.md`, which explains the approach and the
+reasoning behind it; the source is `template/docs/DELIVERY-SYSTEM.md.jinja`.
 
 ## GCP deployment
 

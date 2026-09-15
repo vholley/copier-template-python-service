@@ -1,17 +1,18 @@
 """Tests for __APP_NAME__.main."""
 
-{% if app_framework == "fastapi" -%}
-from __APP_NAME__.main import healthz
+{% if enable_delivery %}import pytest
+{% endif %}{% if app_framework == "fastapi" %}from __APP_NAME__.main import healthz
 
 
-def test_healthz_returns_ok() -> None:
+{% if enable_delivery %}@pytest.mark.spec("__APP_NAME__.md#health-check")
+{% endif %}def test_healthz_returns_ok() -> None:
     """healthz returns an ok status payload."""
     assert healthz() == {"status": "ok"}
-{%- else -%}
-from __APP_NAME__.main import main
+{% else %}from __APP_NAME__.main import main
 
 
-def test_main_callable() -> None:
+{% if enable_delivery %}@pytest.mark.spec("__APP_NAME__.md#runs")
+{% endif %}def test_main_callable() -> None:
     """main is callable without raising."""
     main()
 {%- endif %}

@@ -52,6 +52,29 @@ include_terraform:
   help: Include Terraform infrastructure scaffolding?
   default: false
 
+enable_delivery:
+  type: bool
+  help: Install the quality-first delivery system (working/, .claude/ process, delivery checks and workflows)?
+  default: true
+
+owner_group:
+  type: str
+  help: Optional GitHub handle to auto-request for review on protected paths (e.g. @org/platform or @username). Leave empty for no CODEOWNERS.
+  default: ""
+  when: "{{ enable_delivery }}"
+
+high_risk_paths:
+  type: yaml
+  help: Glob patterns for high-risk paths (second reviewer required), as a YAML list
+  default: ["**/auth/**", "**/migrations/**"]
+  when: "{{ enable_delivery }}"
+
+trivial_paths:
+  type: yaml
+  help: Glob patterns for trivial-eligible paths (no work item needed), as a YAML list
+  default: ["docs/**", "*.md", ".github/**", "**/tests/**", "pyproject.toml", "uv.lock"]
+  when: "{{ enable_delivery }}"
+
 # File exclusion rules driven by answers
 _exclude:
   - "*.pyc"
@@ -60,11 +83,51 @@ _exclude:
   - "{% if not include_docker %}**/Dockerfile{% endif %}"
   - "{% if not include_terraform %}infra{% endif %}"
   - "{% if not use_gcp %}libs/shared/src/shared/gcp.py{% endif %}"
-  - "{% if not use_gcp %}.github/workflows/deploy.yml{% endif %}"
-  - "{% if not use_gcp %}scripts/deploy.sh{% endif %}"
+  - "{% if not use_gcp or not include_docker %}.github/workflows/deploy.yml{% endif %}"
+  - "{% if not use_gcp or not include_docker %}scripts/deploy.sh{% endif %}"
   - "{% if not include_terraform %}scripts/tf-bootstrap.sh{% endif %}"
   - "{% if not include_terraform or not use_gcp %}.github/workflows/terraform-plan.yml{% endif %}"
   - "{% if not include_terraform or not use_gcp %}.github/workflows/terraform-apply.yml{% endif %}"
+  - "{% if not enable_delivery %}working{% endif %}"
+  - "{% if not enable_delivery or not owner_group %}.github/CODEOWNERS{% endif %}"
+  - "{% if not enable_delivery %}.claude/settings.json{% endif %}"
+  - "{% if not enable_delivery %}.claude/commands{% endif %}"
+  - "{% if not enable_delivery %}.claude/skills{% endif %}"
+  - "{% if not enable_delivery %}.claude/VENDORED.md{% endif %}"
+  - "{% if not enable_delivery %}.claude/agents{% endif %}"
+  - "{% if not enable_delivery %}.claude/rules{% endif %}"
+  - "{% if app_framework != 'fastapi' %}.claude/rules/api-design.md{% endif %}"
+  - "{% if not enable_delivery %}scripts/delivery{% endif %}"
+  - "{% if not enable_delivery %}scripts/hooks{% endif %}"
+  - "{% if not enable_delivery %}scripts/migrate-to-delivery.sh{% endif %}"
+  - "{% if not enable_delivery %}.github/workflows/delivery-checks.yml{% endif %}"
+  - "{% if not enable_delivery %}.github/workflows/review-agents.yml{% endif %}"
+  - "{% if not enable_delivery %}.github/workflows/spec-draft.yml{% endif %}"
+  - "{% if not enable_delivery %}.github/workflows/post-merge.yml{% endif %}"
+  - "{% if not enable_delivery %}.github/workflows/entropy-audit.yml{% endif %}"
+  - "{% if not enable_delivery %}.github/actions/setup{% endif %}"
+  - "{% if not include_docker and not enable_delivery %}.dockerignore{% endif %}"
+  - "{% if not enable_delivery %}MIGRATION.md{% endif %}"
+  - "{% if not enable_delivery %}docs/DELIVERY-SYSTEM.md{% endif %}"
+  - "{% if not enable_delivery %}docs/workflow.mermaid{% endif %}"
+
+# Files the project owns after first generation. Never rewritten by copier
+# update, even when the template changes them.
+_skip_if_exists:
+  - ".claude/rules/project.md"
+  - "working/spec/**"
+  - "working/architecture/**"
+  - "working/standards/budgets.md"
+  - "working/observations.md"
+  - "working/history/**"
+  - ".github/CODEOWNERS"
+
+_message_after_update: |
+  Template updated.
+  {% if enable_delivery %}If this project was generated before the delivery
+  system existed, read MIGRATION.md and run:
+    scripts/migrate-to-delivery.sh --from <a freshly generated project>
+  {% endif %}
 
 # Post-generation tasks
 # git rev-list -1 HEAD succeeds only when commits exist (i.e. an existing project
@@ -90,3 +153,12 @@ _tasks:
       To pull future template updates:
       copier update --trust --skip-answered
     '; esac
+  - >-
+    {% if enable_delivery %}case "$(basename "$PWD")" in copier._main.*) ;; *)
+    git rev-list -1 HEAD >/dev/null 2>&1 || echo '
+    Delivery system installed. Two more setup steps:
+      7. make hooks          (installs pre-commit and the Claude Code hooks)
+      8. Register your SSH key as a GitHub signing key and protect it per use
+         (see working/README.md, "Signing acceptances"). Acceptance commits
+         require it; ordinary commits do not.
+    '; esac{% else %}true{% endif %}

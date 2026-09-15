@@ -1,0 +1,13 @@
+# Normalize to LF in the repository for everything text-like.
+* text=auto eol=lf
+
+# Files that must be LF in the working tree too: a CRLF shebang
+# (`#!/usr/bin/env sh\r`) fails on every POSIX shell, and these are copied
+# verbatim into generated projects.
+*.sh        text eol=lf
+*.jinja     text eol=lf
+Makefile    text eol=lf
+*.mermaid   text eol=lf
+
+# Never touched.
+*.pyc       binary

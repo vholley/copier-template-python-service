@@ -1,0 +1,71 @@
+---
+description: How tests are written here; loaded when touching tests
+paths:
+  - "**/tests/**"
+---
+
+## Testing
+
+Tests live in `apps/<name>/tests/`, alongside the app — not in a top-level `tests/` directory. One test file per source module:
+
+```
+apps/my_service/
+├── src/my_service/
+│   ├── main.py
+│   └── processor.py
+└── tests/
+    ├── test_main.py
+    └── test_processor.py
+```
+
+Name test functions to describe the case: `test_<what>_<outcome>`.
+
+```python
+def test_fetch_invoice_returns_payload_on_success() -> None: ...
+def test_fetch_invoice_raises_on_auth_failure() -> None: ...
+```
+
+Use `@pytest.fixture` for shared setup. Mock all external services — never hit real GCP APIs, real HTTP endpoints, or real databases from tests. Use `unittest.mock` or `pytest-mock` (add `pytest-mock` to dev dependencies first):
+
+```python
+from unittest.mock import patch
+
+
+@patch("my_service.processor.httpx.AsyncClient")
+def test_fetch_data(mock_client) -> None:
+    mock_client.return_value.__enter__.return_value.get.return_value.json.return_value = {"id": "1"}
+    ...
+```
+
+For async tests: add `pytest-asyncio` to dev dependencies (`uv add --group dev pytest-asyncio`) and set `asyncio_mode = "auto"` in `[tool.pytest.ini_options]` in `pyproject.toml`. Async test functions then run without an explicit `@pytest.mark.asyncio` marker on each one.
+
+Coverage target: ~80% on new code. Higher for `libs/shared/` — bugs there affect every app.
+
+**Test independence.** Each test must set up and tear down its own state. Tests that pass individually but fail together signal mutable state leaking between tests and are the most common source of CI flakiness. No mutable module-level test data. Be deliberate about fixture scope: `function` scope (the default) is safest; use `session` scope only for read-only, expensive setup.
+
+**Mock at the boundary, not deep inside.** Mock the external interface — the HTTP client, the GCP client — not internal helpers. Patching a private function to make a test pass couples the test to the implementation; it won't survive a refactor and won't catch real integration bugs.
+
+**Arrange-Act-Assert structure.** Each test has three phases: set up state, perform the operation, verify the result. One logical assertion per test — not one `assert` statement, but one thing being verified. If the test name says "raises on auth failure", assert on the specific exception type, not just that something was raised.
+
+**Parameterize for multiple cases.** Use `@pytest.mark.parametrize` when the same logic needs to be exercised across multiple inputs. This avoids copy-paste test functions that diverge silently and makes covered cases explicit.
+
+```python
+@pytest.mark.parametrize(
+    "status_code,expected", [(401, PortalAuthenticationError), (404, PortalInvoiceNotFoundError)]
+)
+async def test_fetch_invoice_raises_on_error(
+    status_code: int, expected: type[Exception]
+) -> None: ...
+```
+
+**Test edge cases explicitly.** A complete test suite covers: the happy path, error and exception paths, boundary conditions (empty collections, `None` inputs, zero values), and auth/permission failures where the code handles them. A suite that only tests the happy path produces a misleading coverage number.
+
+**Tests must be able to catch real bugs.** A test that mocks so thoroughly it can't fail even when the real integration is broken provides false confidence. If a test would still pass after deleting the function under test, it is not verifying anything. When in doubt, ask: what real breakage would this test catch?
+
+**Hard-to-test code is a design signal.** If writing a test requires a long chain of nested `.return_value` mocks or extensive setup to reach the logic under test, the code has a design problem — usually too many responsibilities in one function or tight coupling to its dependencies. The fix is to refactor toward dependency injection and I/O separation, not to write a more elaborate mock.
+
+**Do not test framework wiring.** Tests should cover business logic, not that FastAPI registered a route, that Pydantic instantiates a model, or that a config value loads from an env var. These are framework guarantees. Testing them produces coverage numbers that don't reflect real protection.
+
+- `make test`: run all tests with coverage
+- `uv run pytest apps/<name>/`: all tests for a single app
+- `uv run pytest apps/<name>/tests/test_module.py::test_name -s`: single test with stdout

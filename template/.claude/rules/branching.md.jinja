@@ -1,0 +1,68 @@
+---
+description: Branch and commit conventions; issue notes
+---
+
+## Branching
+
+This project uses Git Flow:
+
+- `main`: production-stable code. Merges here trigger a deployment to `prod`.
+- `develop`: integration branch. Merges here trigger a deployment to `dev`.
+- Feature branches: cut from `develop`, PR back to `develop`. Use descriptive names following `<type>/<short-description>` (e.g., `feat/add-auth-endpoint`, `fix/token-refresh`).
+- Hotfixes: cut from `main`, PR to both `main` and `develop`. Use a `fix/` prefix and describe the problem.
+
+Do not commit directly to `main` or `develop`. All changes go through a PR.
+
+**Commits and PR titles follow conventional commit format.** Branch names carry a type prefix (e.g., `feat/`, `fix/`), and every commit on a branch must use the matching conventional commit type. The PR title must match.
+
+PRs are squash-merged, so the PR title becomes the commit message on `develop` or `main`. Use:
+
+```
+<type>(<optional scope>): <subject under 72 chars, imperative mood>
+```
+
+The commit type must reflect the branch's Git Flow role:
+
+- Branches introducing new behavior → all commits use `feat:`
+- Branches correcting a bug or hotfix → all commits use `fix:`
+- Maintenance-only branches → `chore:`, `docs:`, `refactor:`, etc.
+
+A branch whose commits span multiple types should be split before review. The reviewer should never need to infer whether a PR is a feature, a fix, or a refactor from reading the diff.
+
+**Commit types:**
+
+- `feat:` — new behavior visible to users or downstream services
+- `fix:` — corrects a bug
+- `chore:` — maintenance that does not change behavior (deps, config, tooling)
+- `docs:` — documentation only
+- `refactor:` — restructuring without behavior change
+- `test:` — adding or correcting tests only
+- `perf:` — measurable performance improvement
+- `ci:` — CI/CD pipeline changes
+- `build:` — build system or packaging changes
+- `style:` — formatting only, no logic change
+
+**Keep PRs small and focused.** One concern per PR. A PR that changes business logic, updates the Dockerfile, and bumps dependencies is three PRs. Smaller PRs are easier to evaluate, revert, and reason about. If scope has crept mid-implementation, split before merging. See **Scope** above — those rules apply equally here. A PR that cannot be described by a single conventional commit type — or whose commits span unrelated areas of the codebase — must be split.
+
+**Use draft PRs for work in progress.** Open a draft PR as soon as a branch has meaningful commits. Mark it ready for review only after the self-review checklist passes. Draft status signals intent without inviting premature feedback.
+
+**Self-review before merging.** Before merging a PR:
+- `make ci` passes
+- No debug code, stray `print` statements, or unresolved `# TODO` left in
+- Diff contains no unintentional file changes
+- New logic has corresponding tests
+
+
+## Bug and issue documentation
+
+**During development.** When a non-trivial bug is found and fixed, add a brief entry to `## Project-specific notes` above. Capture:
+- The symptom (what the incorrect behavior looked like)
+- The root cause (why the code behaved that way)
+- The fix (what was changed and why it resolves it)
+- How to avoid it in future
+
+Trivial fixes — typos, simple off-by-ones in brand new code — do not need documentation. Document bugs that caused incorrect behavior, data problems, or took significant time to diagnose. After fixing a non-trivial bug, prompt the engineer to add an entry before closing the session.
+
+**After the project reaches production.** Production incidents warrant a more structured record than a bullet in Project-specific notes. On the first production incident, create a `docs/incidents/` directory (it is not in the template — create it when needed) and add a Markdown file per incident using this structure:
+
+```markdown

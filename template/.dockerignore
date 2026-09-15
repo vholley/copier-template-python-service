@@ -1,0 +1,11 @@
+# Nothing from the delivery system is deployable.
+.claude/
+.work/
+working/
+docs/
+scripts/
+.github/
+**/tests/
+*.md
+.git/
+.venv/

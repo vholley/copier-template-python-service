@@ -1,4 +1,4 @@
-name: CI
+{% raw %}name: CI
 
 on:
   pull_request:
@@ -42,3 +42,17 @@ jobs:
 
       - name: Test
         run: make test
+{% endraw %}{%- if enable_delivery %}
+
+      - name: Constraints (import-linter + constraints.py)
+        run: make constraints
+
+      - name: Budgets
+        run: make budgets
+
+      - name: Spec coverage
+        run: make spec-coverage
+
+      - name: Deployable surface
+        run: make deploy-surface
+{%- endif %}

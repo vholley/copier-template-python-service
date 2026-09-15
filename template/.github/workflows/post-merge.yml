@@ -1,0 +1,31 @@
+name: post-merge
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [develop]
+
+permissions:
+  contents: write
+
+env:
+  PYTHONPATH: scripts
+
+jobs:
+  archive:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: develop, fetch-depth: 0 }
+      - uses: ./.github/actions/setup
+      - name: Archive the work item and record the labels
+        run: |
+          git config user.name "${{ github.event.pull_request.user.login }}"
+          git config user.email "${{ github.event.pull_request.user.login }}@users.noreply.github.com"
+          ITEM=$(ls .work 2>/dev/null | head -1 || true)
+          if [ -n "$ITEM" ]; then uv run python -m delivery.post_merge --item "$ITEM"; fi
+          git add -A
+          git commit -m "chore(${ITEM:-quick-change}): archive after merge of #${{ github.event.pull_request.number }}" \
+            -m "Labels: ${{ join(github.event.pull_request.labels.*.name, ', ') }}" || echo "nothing to archive"
+          git push

@@ -1,0 +1,29 @@
+name: review-agents
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+    branches: [develop]
+
+concurrency:
+  group: review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+
+jobs:
+  review:
+    name: necessity and spec reviewers (read-only)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: ./.github/actions/setup
+      - uses: anthropics/claude-code-action@v1
+        with:
+          prompt: "/review-pr ${{ github.event.pull_request.number }}"
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          allowed_tools: "Read,Grep,Glob,Bash(make green),Bash(make contract*),Bash(git diff*),Bash(git log*)"

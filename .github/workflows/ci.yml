@@ -8,8 +8,13 @@ on:
 
 jobs:
   generation-tests:
-    name: Generation tests
-    runs-on: ubuntu-latest
+    name: Generation tests / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # The supported platforms. Windows is served by WSL 2, which is Linux.
+        os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v4
@@ -19,6 +24,19 @@ jobs:
       - run: uv sync --locked
       - run: uv run pytest tests/ -v
 
+  commit-trailers:
+    name: Commit trailers
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # Each commit is one contributor's; see CONTRIBUTING.md.
+      - name: No LLM co-author trailers
+        run: |
+          git log origin/main..HEAD --format=%B | grep -q Co-Authored-By && exit 1
+          echo "no co-author trailers"
+
   template-ci:
     name: Template CI / ${{ matrix.label }}
     runs-on: ubuntu-latest
@@ -26,12 +44,41 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - label: py313-no-gcp
+            args: >-
+              -d project_name=test-project
+              -d app_framework=minimal
+              -d python_version=3.13
+              -d use_gcp=false
+              -d include_docker=false
           - label: minimal-no-gcp
             args: >-
               -d project_name=test-project
               -d app_framework=minimal
               -d use_gcp=false
               -d include_docker=false
+          - label: no-delivery
+            args: >-
+              -d project_name=test-project
+              -d app_framework=minimal
+              -d use_gcp=false
+              -d include_docker=false
+              -d enable_delivery=false
+          - label: terraform-no-gcp
+            args: >-
+              -d project_name=test-project
+              -d app_framework=minimal
+              -d use_gcp=false
+              -d include_docker=false
+              -d include_terraform=true
+          - label: gcp-without-docker
+            args: >-
+              -d project_name=test-project
+              -d app_framework=minimal
+              -d use_gcp=true
+              -d include_docker=false
+              -d gcp_project_dev=my-project-dev
+              -d gcp_project_prod=my-project-prod
           - label: fastapi-no-gcp
             args: >-
               -d project_name=test-project

@@ -1,0 +1,159 @@
+# The command registry. Every command the process offers is declared here
+# once; make help, /help, the README table, and make status are generated from it.
+# runner: agent | human | both.   when: anywhere | front-stage | build | defects | review
+
+[[command]]
+name = "start"
+description = "Begin work: asks what you are here to do (TICKET=<key>)"
+when = "anywhere"
+runner = "both"
+
+[[command]]
+name = "status"
+description = "Where am I and what is next"
+when = "anywhere"
+runner = "both"
+
+[[command]]
+name = "help"
+description = "Every command, grouped by when it applies"
+when = "anywhere"
+runner = "both"
+
+[[command]]
+name = "green"
+description = "Autofix, then lint, types, tests, and checks for the touched members"
+when = "anywhere"
+runner = "both"
+
+[[command]]
+name = "ci"
+description = "Everything CI runs, on the whole workspace"
+when = "anywhere"
+runner = "both"
+
+[[command]]
+name = "contract"
+description = "Dry-run the pull-request contract locally"
+when = "review"
+runner = "both"
+
+[[command]]
+name = "accept"
+description = "Sign a prepared acceptance (engineer only, in your own shell)"
+when = "front-stage"
+runner = "human"
+
+[[command]]
+name = "accept-prepare"
+description = "Stage the artifact and write the sign-off message for the engineer"
+when = "front-stage"
+runner = "agent"
+
+[[command]]
+name = "adopt-branch"
+description = "Bind the current branch to a new work item (after a bounce)"
+when = "anywhere"
+runner = "both"
+
+[[command]]
+name = "amend"
+description = "Change an accepted artifact, one criterion at a time"
+when = "build"
+runner = "both"
+
+[[command]]
+name = "abandon"
+description = "Close the current work item and archive it (asks first)"
+when = "anywhere"
+runner = "human"
+
+[[command]]
+name = "opt-out"
+description = "Leave the process for this branch; then make accept STAGE=opt-out"
+when = "anywhere"
+runner = "both"
+
+[[command]]
+name = "log"
+description = "Record an issue and the definition it exposed: WHAT=... MISSING=... [FIX=...]"
+when = "anywhere"
+runner = "both"
+
+[[command]]
+name = "rebuild"
+description = "Regenerate .work/<ID>/state.json from git and the artifacts"
+when = "anywhere"
+runner = "both"
+
+[[command]]
+name = "new-app"
+description = "Scaffold a new app: NAME=<name>"
+when = "anywhere"
+runner = "both"
+
+[[command]]
+name = "intent"
+description = "Write intent.md: what, why, constraints, non-goals, done"
+when = "front-stage"
+runner = "agent"
+
+[[command]]
+name = "clarify"
+description = "Contradictions first, then only the questions that change what is built"
+when = "front-stage"
+runner = "agent"
+
+[[command]]
+name = "spec"
+description = "Write spec.md and criteria.json (every criterion starts failing)"
+when = "front-stage"
+runner = "agent"
+
+[[command]]
+name = "plan"
+description = "Interfaces and ordered steps, each mapped to criteria"
+when = "build"
+runner = "agent"
+
+[[command]]
+name = "red"
+description = "One failing test per criterion, committed before any implementation"
+when = "build"
+runner = "agent"
+
+[[command]]
+name = "implement"
+description = "One plan step at a time; make green after each; commit"
+when = "build"
+runner = "agent"
+
+[[command]]
+name = "diagnose"
+description = "Reproduce, gather evidence, confirm the cause before any fix"
+when = "defects"
+runner = "agent"
+
+[[command]]
+name = "architect"
+description = "New project: architecture, constraints, standards, budgets"
+when = "front-stage"
+runner = "agent"
+
+[[command]]
+name = "decompose"
+description = "New project: the living-spec skeleton and the first work items"
+when = "front-stage"
+runner = "agent"
+
+[[command]]
+name = "review-pr"
+description = "Run the read-only reviewers on a pull request"
+when = "review"
+runner = "agent"
+
+[[command]]
+name = "entropy-audit"
+description = "Weekly drift checks; drafts only, never commits"
+when = "review"
+runner = "agent"

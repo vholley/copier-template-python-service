@@ -35,4 +35,26 @@ repos:
     hooks:
       - id: conventional-pre-commit
         stages: [commit-msg]
-        args: []
+        args: [feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert{% if enable_delivery %}, accept{% endif %}]
+{%- if enable_delivery %}
+
+  # Delivery checks (deterministic; the same scripts run in hooks and CI)
+  - repo: local
+    hooks:
+      - id: delivery-constraints
+        name: delivery constraints
+        entry: env PYTHONPATH=scripts uv run python -m delivery.constraints
+        language: system
+        pass_filenames: false
+        files: ^(libs|apps)/.*\.py$
+      - id: delivery-budgets
+        name: delivery budgets
+        entry: env PYTHONPATH=scripts uv run python -m delivery.budgets
+        language: system
+        pass_filenames: false
+      - id: delivery-accept-trailer
+        name: acceptance trailer
+        entry: env PYTHONPATH=scripts uv run python scripts/delivery/accept_trailer.py
+        language: system
+        stages: [commit-msg]
+{%- endif %}

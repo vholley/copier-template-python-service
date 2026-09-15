@@ -34,7 +34,7 @@ Then in **GitHub → repository settings**:
   - Require a pull request before merging
   - Require the `CI` status check to pass
   - Require branches to be up to date before merging
-- **Environments** — see [GitHub repository setup](#github-repository-setup) below.
+- **Environments**: see [GitHub repository setup](#github-repository-setup) below.
 
 ## Day-to-day commands
 
@@ -108,8 +108,9 @@ If `scripts/bootstrap.sh` fails, the manual equivalent is:
 {% if use_gcp %}
 ## GitHub repository setup
 
-Deployments authenticate to GCP via Workload Identity Federation. Follow these steps in order — Terraform must run first to produce the values you need.
+Deployments authenticate to GCP via Workload Identity Federation. Follow these steps in order: Terraform must run first to produce the values you need.
 
+{% if include_terraform -%}
 **Step 1: Apply Terraform for each environment.**
 
 ```sh
@@ -123,14 +124,29 @@ make tf-apply ENV=prod
 cd infra/terraform/environments/dev && terraform output
 cd infra/terraform/environments/prod && terraform output
 ```
+{%- else %}
+**Steps 1 and 2: Create the Workload Identity Federation provider and the deploy service
+account.** This project was generated without Terraform (`include_terraform: false`), so
+there is no `infra/` directory and no `tf-plan`/`tf-apply` targets. Create the pool,
+provider and service account by hand -- see Google's
+[Workload Identity Federation with GitHub Actions][wif] guide -- and note the provider
+resource name and the service account email for step 3.
+
+[wif]: https://cloud.google.com/iam/docs/workload-identity-federation-with-deployment-pipelines
+{%- endif %}
 
 **Step 3: Create two GitHub Environments** (`dev` and `prod`) under repository settings → Environments, and set these variables in each:
 
 | Variable | `dev` value | `prod` value | Source |
 |---|---|---|---|
 | `GCP_PROJECT` | `{{ gcp_project_dev }}` | `{{ gcp_project_prod }}` | Set manually |
+{% if include_terraform -%}
 | `WIF_PROVIDER` | (from Terraform output) | (from Terraform output) | `terraform output wif_provider` |
 | `DEPLOY_SERVICE_ACCOUNT` | (from Terraform output) | (from Terraform output) | `terraform output deploy_sa_email` |
+{%- else -%}
+| `WIF_PROVIDER` | (from step 1) | (from step 1) | Set manually |
+| `DEPLOY_SERVICE_ACCOUNT` | (from step 1) | (from step 1) | Set manually |
+{%- endif %}
 {% if include_terraform -%}
 | `TERRAFORM_SERVICE_ACCOUNT` | (from Terraform output) | (from Terraform output) | `terraform output terraform_sa_email` |
 {% endif -%}
@@ -157,3 +173,13 @@ The `docs/` folder holds template-provided reference material. It is gitignored,
 - `docs/DEVELOPING.md`: daily tasks (running code, running tests, adding dependencies, debugging).
 
 `CLAUDE.md` at the repo root is checked in. It holds project-specific instructions for Claude Code sessions; edit it as the project evolves.
+{%- if enable_delivery %}
+
+## How work flows
+
+This repository uses a delivery process for working with an AI coding agent.
+Start with `make start`; `make status` tells you where you are; `make help`
+lists everything. The one-page guide is `working/README.md`; the reasoning is
+`docs/DELIVERY-SYSTEM.md`. Register your SSH key as a GitHub signing key before
+your first sign-off (see `working/README.md#signing`).
+{%- endif %}

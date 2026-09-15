@@ -1,0 +1,49 @@
+# Budgets
+
+Named numeric limits. A dimension with a budget is a criterion; a dimension
+without one is, by decision, not optimized. Lines are `key: value` and are
+read by scripts/delivery/budgets.py. Comments start with #.
+
+# Diff size per PR by change tier (lines added + removed)
+diff.trivial.max_lines: 50
+diff.standard.max_lines: 400
+diff.high.max_lines: 250
+diff.string_only.max_lines: 10
+
+# Dependencies
+deps.new_per_pr: 0
+
+# Code shape (enforced by Ruff where a rule exists; see pyproject.toml)
+file.max_lines: 500
+function.max_statements: 50
+function.max_args: 6
+complexity.max: 10
+
+# Model-facing text
+agents_md.max_lines: 150
+area_doc.max_lines: 200
+spec_domain.max_lines: 300
+
+# Human-facing text
+comment_density.max: 0.15
+
+# Tests
+coverage.diff.min: 0.90
+mutation.min_kill_ratio: 0.70
+
+# Process
+stop_hook.retry_cap: 3
+headless.token_budget: 0
+spec_early_look.min_lines: 200
+review.max_lines: 80
+review.question_max_lines: 15
+
+# Path lists (glob patterns, one per line, indented)
+high_risk_paths:
+{%- for p in high_risk_paths %}
+  - "{{ p }}"
+{%- endfor %}
+trivial_paths:
+{%- for p in trivial_paths %}
+  - "{{ p }}"
+{%- endfor %}

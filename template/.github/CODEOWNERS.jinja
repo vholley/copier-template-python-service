@@ -1,0 +1,16 @@
+# Auto-requests review from {{ owner_group }} on protected paths.
+# This file chooses who is asked; it does not add an approval requirement.
+/working/architecture/      {{ owner_group }}
+/working/standards/         {{ owner_group }}
+/working/spec/              {{ owner_group }}
+/libs/*/tests/              {{ owner_group }}
+/apps/*/tests/              {{ owner_group }}
+/pyproject.toml             {{ owner_group }}
+/libs/*/pyproject.toml      {{ owner_group }}
+/apps/*/pyproject.toml      {{ owner_group }}
+/scripts/                   {{ owner_group }}
+/AGENTS.md                  {{ owner_group }}
+/Makefile                   {{ owner_group }}
+/.pre-commit-config.yaml    {{ owner_group }}
+/.github/                   {{ owner_group }}
+/.claude/                   {{ owner_group }}
