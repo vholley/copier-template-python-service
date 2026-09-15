@@ -13,6 +13,8 @@ This project uses Git Flow:
 
 Do not commit directly to `main` or `develop`. All changes go through a PR.
 
+The one exception is the root commit. Generation makes it on `develop`, because a pull request needs a base and an empty repository has none. It is the engineer's own commit, authored from their git config, and it is the only commit in the repository's life that reaches a protected branch without review.
+
 **Commits and PR titles follow conventional commit format.** Branch names carry a type prefix (e.g., `feat/`, `fix/`), and every commit on a branch must use the matching conventional commit type. The PR title must match.
 
 PRs are squash-merged, so the PR title becomes the commit message on `develop` or `main`. Use:

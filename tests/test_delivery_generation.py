@@ -423,16 +423,26 @@ class TestSetUpShipsWithTheProject:
         assert "project" in constraints.split("## Protected paths")[1].split("## ")[0]
 
     def test_start_offers_it_on_a_fresh_project(self, delivery_copy: Path) -> None:
-        """End to end: generation leaves a project with no members, so it is offered."""
+        """End to end: generation leaves a project with no members, so it is offered.
+
+        This is the smoke test for the scaffold commit as much as for set-up: on a
+        repository with no commits `make start` raised instead of answering, so the
+        fact that it prints a menu at all is the thing being asserted.
+        """
         env = {**__import__("os").environ, "PYTHONPATH": "scripts"}
         r = subprocess.run(
             [PYTHON, "-m", "delivery.start"],
             cwd=delivery_copy, env=env, capture_output=True, text=True, check=False,
         )
         assert r.returncode == 0, r.stdout + r.stderr
-        for answer in ("set-up", "quick-change", "change", "bug-fix", "explore", "opt-out"):
-            assert answer in r.stdout, (answer, r.stdout)
-        assert r.stdout.index("set-up") < r.stdout.index("quick-change")
+        assert "Traceback" not in r.stderr, r.stderr
+        offered = [
+            ln.split()[0] for ln in r.stdout.splitlines() if ln.startswith("  ")
+        ]
+        assert offered == [
+            "set-up", "quick-change", "change", "bug-fix", "explore",
+            "process-change", "opt-out",
+        ], r.stdout
 
 
 class TestGeneratedFilesEndCleanly:
