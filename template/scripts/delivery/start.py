@@ -51,6 +51,7 @@ NEXT_FOR = {
     ),
 }
 MORE = "working/README.md#start"
+SHIPPED_SPEC_FILES = frozenset({"README.md", "shared.md"})
 
 
 def _has_changes(repo: Path) -> bool:
@@ -60,13 +61,14 @@ def _has_changes(repo: Path) -> bool:
 def _is_fresh(repo: Path) -> bool:
     """True while the project has no members: nothing to change yet, only to define.
 
-    working/spec/README.md ships with the template and describes no member, so it
-    does not count. The first app or the first spec member retires the answer.
+    README.md and shared.md ship with the template: the first describes no member
+    and the second describes one the project did not choose. The first app, or the
+    first spec file the project writes itself, retires the answer.
     """
     if any((repo / "apps").glob("*/pyproject.toml")):
         return False
     spec = (repo / "working" / "spec").glob("*.md")
-    return not [p for p in spec if p.name != "README.md"]
+    return not [p for p in spec if p.name not in SHIPPED_SPEC_FILES]
 
 
 def offers(repo: Path) -> list[str]:

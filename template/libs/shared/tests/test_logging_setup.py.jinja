@@ -1,0 +1,71 @@
+"""Tests for shared.logging_setup."""
+
+from __future__ import annotations
+
+import json
+
+import pytest
+import structlog
+from shared.logging_setup import configure_logging
+
+
+@pytest.fixture(autouse=True)
+def _reset_structlog() -> object:
+    """configure_logging caches loggers on first use, so each test starts clean."""
+    structlog.reset_defaults()
+    yield
+    structlog.reset_defaults()
+
+
+{% if enable_delivery %}@pytest.mark.spec("shared.md#logging-is-configured-for-its-destination")
+{% endif %}def test_cloud_run_emits_json_on_stdout(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """K_SERVICE is set in Cloud Run and nowhere else; it selects the JSON renderer."""
+    monkeypatch.setenv("K_SERVICE", "demo-service")
+    configure_logging()
+    structlog.get_logger().info("started", port=8080)
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    payload = json.loads(captured.out)
+    assert payload["event"] == "started"
+    assert payload["port"] == 8080
+{%- if use_gcp %}
+    assert payload["severity"] == "INFO"
+{%- else %}
+    assert payload["level"] == "info"
+{%- endif %}
+
+
+{% if enable_delivery %}@pytest.mark.spec("shared.md#logging-is-configured-for-its-destination")
+{% endif %}def test_elsewhere_emits_readable_output_on_stderr(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.delenv("K_SERVICE", raising=False)
+    configure_logging()
+    structlog.get_logger().info("started")
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "started" in captured.err
+    with pytest.raises(json.JSONDecodeError):
+        json.loads(captured.err)
+
+
+{% if enable_delivery %}@pytest.mark.spec("shared.md#the-log-level-is-a-threshold")
+{% endif %}def test_a_message_below_the_level_is_dropped(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.delenv("K_SERVICE", raising=False)
+    configure_logging(level="ERROR")
+    structlog.get_logger().info("chatter")
+    assert capsys.readouterr().err == ""
+
+
+{% if enable_delivery %}@pytest.mark.spec("shared.md#the-log-level-is-a-threshold")
+{% endif %}def test_a_message_at_the_level_is_kept(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.delenv("K_SERVICE", raising=False)
+    configure_logging(level="ERROR")
+    structlog.get_logger().error("broke")
+    assert "broke" in capsys.readouterr().err

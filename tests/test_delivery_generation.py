@@ -59,7 +59,10 @@ class TestDeliveryOff:
             "README.md", "scripts/new-app.sh", ".copier-answers.yml",
             "docs/RATIONALE.md", "docs/DEVELOPING.md", "docs/SETUP.md",  # gain a delivery section (S9)
             "app-template/pyproject.toml",  # gains [tool.delivery] (S11)
+            "libs/shared/pyproject.toml",  # gains [tool.delivery] too
             "app-template/tests/test_main.py",  # gains the spec marker (S11)
+            "libs/shared/tests/test_config.py",  # gain the spec marker
+            "libs/shared/tests/test_logging_setup.py",
         }
         diffs = [p for p, b in plain.items() if p not in replaced and full.get(p) != b]
         assert diffs == []
@@ -549,6 +552,13 @@ class TestGitignore:
 # ------------------------------------------------------------------- S8 (C09 to C12, C16)
 
 import re as _re
+
+
+def _slugify(title: str) -> str:
+    """GitHub-style heading slug; mirrors delivery.spec_coverage.slug."""
+    s = _re.sub(r"[^\w\s-]", "", title.lower()).strip()
+    return _re.sub(r"[\s_]+", "-", s)
+
 import shutil
 
 import yaml as _yaml
@@ -839,7 +849,7 @@ class TestHumanFacingDocs:
 
     def test_writing_check_finds_seeded_tells(self, delivery_copy: Path) -> None:
         env = {**__import__("os").environ, "PYTHONPATH": "scripts"}
-        (delivery_copy / "seeded.md").write_text("This isn't just a tool â€” it's a paradigm shift that will delve into a rich tapestry of workflows.\n")
+        (delivery_copy / "seeded.md").write_text("This isn't just a tool — it's a paradigm shift that will delve into a rich tapestry of workflows.\n")
         r = subprocess.run([PYTHON, "-m", "delivery.writing_check", "seeded.md"], cwd=delivery_copy, env=env, capture_output=True, text=True)
         assert r.returncode == 1 and "seeded.md" in r.stdout
 
@@ -859,7 +869,7 @@ class TestIssueLog:
         assert run("close", "L-1", "--fix", "z").returncode == 0
         assert run("open").returncode == 0
         text = (delivery_copy / "working/log.md").read_text()
-        assert "## L-1" in text and "Â· closed" in text and "Fix: z" in text
+        assert "## L-1" in text and "· closed" in text and "Fix: z" in text
 
 
 # ---------------------------------------------------------------- S10 (C03, C07, C08)
@@ -997,6 +1007,97 @@ class TestCopierUpdate:
 
 
 # ------------------------------------------------------------------- S11 (C13)
+
+
+class TestSharedIsEnabledAndTested:
+    """The one member every project starts with had no tests and ran none.
+
+    libs/shared ships BaseAppSettings and configure_logging, which every app
+    imports, and its pyproject carried no [tool.delivery] block -- so make green
+    skipped it, and there was nothing to skip. A generated project's first
+    `make test` collected zero tests from the only code it owns.
+    """
+
+    TEST_FILES = ["test_config.py", "test_logging_setup.py"]
+
+    def _tests_dir(self, project: Path) -> Path:
+        return project / "libs/shared/tests"
+
+    def _marker_anchors(self, project: Path) -> set[str]:
+        found: set[str] = set()
+        for f in sorted(self._tests_dir(project).glob("test_*.py")):
+            found.update(
+                _re.findall(
+                    r"@pytest\.mark\.spec\(\s*[\"']([^\"']+)[\"']\s*\)",
+                    f.read_text(encoding="utf-8"),
+                )
+            )
+        return found
+
+    def _spec_anchors(self, project: Path) -> set[str]:
+        text = (project / "working/spec/shared.md").read_text(encoding="utf-8")
+        return {
+            "shared.md#" + _slugify(m)
+            for m in _re.findall(r"^##\s+(.+?)\s*$", text, _re.M)
+        }
+
+    def test_shared_declares_itself_enabled(self, delivery_project: Path) -> None:
+        text = (delivery_project / "libs/shared/pyproject.toml").read_text(encoding="utf-8")
+        assert "[tool.delivery]" in text
+        assert _re.search(r"\[tool\.delivery\][^\[]*enabled\s*=\s*true", text, _re.S)
+
+    def test_plain_shared_has_no_delivery_block(self, plain_project: Path) -> None:
+        text = (plain_project / "libs/shared/pyproject.toml").read_text(encoding="utf-8")
+        assert "[tool.delivery]" not in text
+
+    @pytest.mark.parametrize("name", TEST_FILES)
+    def test_the_tests_ship_in_both_projects(
+        self, delivery_project: Path, plain_project: Path, name: str
+    ) -> None:
+        assert (self._tests_dir(delivery_project) / name).exists()
+        assert (self._tests_dir(plain_project) / name).exists()
+
+    def test_the_tests_carry_spec_markers(self, delivery_project: Path) -> None:
+        assert self._marker_anchors(delivery_project)
+
+    def test_plain_tests_carry_no_markers(self, plain_project: Path) -> None:
+        """The spec marker is registered only under enable_delivery, and
+        --strict-markers is not: an unregistered marker fails collection."""
+        for f in sorted(self._tests_dir(plain_project).glob("test_*.py")):
+            assert "pytest.mark.spec" not in f.read_text(encoding="utf-8"), f.name
+
+    def test_the_spec_file_ships_and_is_specified(self, delivery_project: Path) -> None:
+        text = (delivery_project / "working/spec/shared.md").read_text(encoding="utf-8")
+        assert "status: unspecified" not in text
+        assert _re.search(r"^##\s+", text, _re.M)
+
+    def test_every_statement_has_a_test(self, delivery_project: Path) -> None:
+        """The whole point of the spec file: no heading without a claiming test."""
+        assert self._spec_anchors(delivery_project) == self._marker_anchors(delivery_project)
+
+    def test_set_up_is_still_offered(self, delivery_project: Path) -> None:
+        """shared.md is shipped, not written by the project, so it is not a member."""
+        env = {**__import__("os").environ, "PYTHONPATH": "scripts"}
+        r = subprocess.run(
+            [PYTHON, "-m", "delivery.start"],
+            cwd=delivery_project, env=env, capture_output=True, text=True, check=False,
+        )
+        assert "set-up" in r.stdout, r.stdout + r.stderr
+
+    def test_the_tests_run_and_spec_coverage_passes(self, delivery_copy: Path) -> None:
+        subprocess.run(["uv", "sync", "--quiet"], cwd=delivery_copy, check=True)
+        r = subprocess.run(
+            ["uv", "run", "pytest", "libs/shared", "-q"],
+            cwd=delivery_copy, capture_output=True, text=True, check=False,
+        )
+        assert r.returncode == 0, (r.stdout + r.stderr)[-3000:]
+        assert _re.search(r"(\d+) passed", r.stdout), r.stdout
+        assert int(_re.search(r"(\d+) passed", r.stdout).group(1)) > 0
+        c = subprocess.run(
+            [require_make(), "spec-coverage"],
+            cwd=delivery_copy, capture_output=True, text=True, check=False,
+        )
+        assert c.returncode == 0, (c.stdout + c.stderr)[-3000:]
 
 
 class TestPkg01FollowsTheApps:
