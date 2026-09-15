@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run --quiet python scripts/hooks/hook.py session-start"
+            "command": "uv run --no-project --quiet python scripts/hooks/hook.py session-start"
           }
         ]
       }
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run --quiet python scripts/hooks/hook.py prompt"
+            "command": "uv run --no-project --quiet python scripts/hooks/hook.py prompt"
           }
         ]
       }
@@ -28,7 +28,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run --quiet python scripts/hooks/hook.py edit"
+            "command": "uv run --no-project --quiet python scripts/hooks/hook.py edit"
           }
         ]
       },
@@ -37,7 +37,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run --quiet python scripts/hooks/hook.py bash"
+            "command": "uv run --no-project --quiet python scripts/hooks/hook.py bash"
           }
         ]
       },
@@ -46,7 +46,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run --quiet python scripts/hooks/hook.py ask"
+            "command": "uv run --no-project --quiet python scripts/hooks/hook.py ask"
           }
         ]
       }
@@ -57,7 +57,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run --quiet python scripts/hooks/hook.py post-edit"
+            "command": "uv run --no-project --quiet python scripts/hooks/hook.py post-edit"
           }
         ]
       }
@@ -67,7 +67,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run --quiet python scripts/hooks/hook.py stop"
+            "command": "uv run --no-project --quiet python scripts/hooks/hook.py stop"
           }
         ]
       }
@@ -77,7 +77,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run --quiet python scripts/hooks/hook.py subagent-stop"
+            "command": "uv run --no-project --quiet python scripts/hooks/hook.py subagent-stop"
           }
         ]
       }

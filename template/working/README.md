@@ -179,6 +179,11 @@ Claude Code hooks (`.claude/settings.json`, `scripts/hooks/`) enforce the
 above in a session. Every block says what was refused, why, the exact next
 command, and links here.
 
+They run under `uv run --no-project`, so a workspace that does not resolve cannot
+stop them: a half-created app would otherwise make every hook exit on a uv error,
+which Claude Code reads as a refusal. A hook that cannot finish blocks rather than
+guess, naming the event and the failure; `make ci` is what diagnoses it.
+
 ## Skills {#skills}
 
 The stage commands live in `.claude/`. `deslop` is vendored from the team's

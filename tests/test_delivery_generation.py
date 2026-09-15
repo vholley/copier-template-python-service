@@ -6,6 +6,7 @@ Red for plan step S1: C01, C02, C04. Later steps add their own tests here.
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -170,6 +171,116 @@ class TestHookEntryPoint:
         payload = json.dumps({"tool_input": {"file_path": str(target)}})
         r = self._run(project, "edit", payload)
         assert r.returncode == 0, (r.returncode, r.stdout, r.stderr)
+
+
+_IMPORT_PROBE = """
+import importlib, pathlib, sys
+sys.path[:] = [p for p in sys.path if "site-packages" not in p and "dist-packages" not in p]
+sys.path.insert(0, "scripts")
+bad = []
+for f in sorted(pathlib.Path("scripts/delivery").glob("*.py")):
+    if f.stem == "__init__":
+        continue
+    try:
+        importlib.import_module("delivery." + f.stem)
+    except Exception as exc:
+        bad.append(f.stem + ": " + repr(exc))
+print("\\n".join(bad))
+sys.exit(1 if bad else 0)
+"""
+
+
+def _hook_commands(project: Path) -> dict[str, str]:
+    """Event name -> the command string Claude Code will run, read from settings.json."""
+    settings = json.loads((project / ".claude" / "settings.json").read_text(encoding="utf-8"))
+    out: dict[str, str] = {}
+    for matchers in settings["hooks"].values():
+        for matcher in matchers:
+            for hook in matcher["hooks"]:
+                command = hook["command"]
+                out[command.rsplit(" ", 1)[-1]] = command
+    return out
+
+
+class TestHooksRunWithoutWorkspaceResolution:
+    """A hook must not need the workspace to resolve before it can say yes or no.
+
+    A plain `uv run` resolves the whole workspace first. One member with a missing
+    or unparseable pyproject.toml -- an app half-created, a merge in progress -- and
+    uv exits 2 with its own error, which Claude Code reads as a refusal: every
+    prompt and every edit is now blocked for a reason the agent cannot act on, at
+    exactly the moment the repository is in a state worth guarding. --no-project
+    skips the resolution, and the delivery package imports nothing outside the
+    standard library, so there is no environment to build.
+    """
+
+    @pytest.fixture
+    def project(self, delivery_copy: Path) -> Path:
+        return delivery_copy
+
+    def _uv(self) -> str:
+        found = shutil.which("uv")
+        if found is None:
+            pytest.skip("uv is not on PATH")
+        return found
+
+    def test_every_hook_command_skips_workspace_resolution(self, project: Path) -> None:
+        """--no-project is the whole fix: it is the resolution step that failed."""
+        for event, command in _hook_commands(project).items():
+            assert "--no-project" in command.split(), (event, command)
+
+    def test_every_hook_command_has_the_same_shape(self, project: Path) -> None:
+        for event, command in _hook_commands(project).items():
+            expected = f"uv run --no-project --quiet python scripts/hooks/hook.py {event}"
+            assert command == expected, (event, command)
+
+    def test_the_settings_command_runs_with_a_broken_workspace_member(
+        self, project: Path
+    ) -> None:
+        """The exact string from settings.json, on a workspace uv would refuse."""
+        self._uv()
+        broken = project / "apps" / "broken"
+        (broken / "src" / "broken").mkdir(parents=True)
+        (broken / "src" / "broken" / "__init__.py").write_text("", encoding="utf-8")
+        command = _hook_commands(project)["prompt"]
+        r = subprocess.run(
+            command, shell=True, cwd=project, input="{}",
+            capture_output=True, text=True, check=False,
+        )
+        assert r.returncode in (0, 2), (r.returncode, r.stdout, r.stderr)
+        assert "uv" not in r.stderr.lower(), r.stderr
+        assert "Traceback" not in r.stderr, r.stderr
+        if r.returncode == 2:
+            lines = [ln for ln in r.stderr.splitlines() if ln.strip()]
+            assert len(lines) == 4, lines
+
+    def test_delivery_imports_with_no_third_party_packages(self, project: Path) -> None:
+        """What lets the hooks drop uv: nothing under scripts/delivery needs a venv."""
+        r = subprocess.run(
+            [PYTHON, "-c", _IMPORT_PROBE],
+            cwd=project, capture_output=True, text=True, check=False,
+        )
+        assert r.returncode == 0, r.stdout + r.stderr
+
+    def test_a_raising_hook_renders_a_block(self, project: Path) -> None:
+        """Whatever goes wrong, Claude Code gets a block it can read, not a stack trace.
+
+        A hand-edited state.json holding a list parses as JSON and then fails on the
+        first attribute access, which is the shape of failure no handler anticipates.
+        """
+        item = project / ".work" / "W-1"
+        item.mkdir(parents=True)
+        (item / "state.json").write_text("[]", encoding="utf-8")
+        r = subprocess.run(
+            [PYTHON, "scripts/hooks/hook.py", "prompt"],
+            cwd=project, input="{}", capture_output=True, text=True, check=False,
+        )
+        assert r.returncode == 2, (r.returncode, r.stdout, r.stderr)
+        assert "Traceback" not in r.stderr, r.stderr
+        lines = [ln for ln in r.stderr.splitlines() if ln.strip()]
+        assert len(lines) == 4, lines
+        assert lines[0].startswith("BLOCKED  hook: prompt failed:"), lines[0]
+        assert lines[2] == "NEXT     make ci", lines[2]
 
 
 class TestScaffoldCommit:
