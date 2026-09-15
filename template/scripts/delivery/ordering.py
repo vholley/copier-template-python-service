@@ -1,6 +1,6 @@
 """Red before green, for every criterion; and for defects, the fix lands where the diagnosis says.
 
-The criterion-to-test map is .work/<id>/tests.json (D29).
+The criterion-to-test map is .work/<id>/tests.json.
 
   ORDER-01 implementation committed before the criterion's test (or no test on the branch)
   ORDER-02 the test passed at the commit that added it (it was never red)
@@ -136,7 +136,7 @@ def check(repo: Path, base: str, item: str) -> list[str]:
             continue
         tests = [str(e.get("test")) for e in tmap.get(cid, [])]
         if not tests and data.get("change_type") != "trivial":
-            out.append(f".work/{item}/tests.json:1: ORDER-01 {cid} lists no tests (D29)")
+            out.append(f".work/{item}/tests.json:1: ORDER-01 {cid} lists no tests")
             continue
         for t in tests:
             path, _, name = t.partition("::")

@@ -1,4 +1,4 @@
-# The command registry (D31). Every command the process offers is declared here
+# The command registry. Every command the process offers is declared here
 # once; make help, /help, the README table, and make status are generated from it.
 # runner: agent | human | both.   when: anywhere | front-stage | build | defects | review
 

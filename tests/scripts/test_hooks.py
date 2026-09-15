@@ -2,7 +2,7 @@
 
 Every hook is `python -m delivery.hooks <event>` reading Claude Code's event JSON
 on stdin. Exit 0 allows; exit 2 blocks with a four-line message on stderr
-(design 11.1, 19.2). scripts/hooks/hook.py calls these; the
+scripts/hooks/hook.py calls these; the
 tests call hooks.run(event, payload, repo) directly.
 
   session-start   prints the orientation text (7.1, 19.3) on stdout

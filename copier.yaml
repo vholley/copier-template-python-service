@@ -112,7 +112,7 @@ _exclude:
   - "{% if not enable_delivery %}docs/workflow.mermaid{% endif %}"
 
 # Files the project owns after first generation. Never rewritten by copier
-# update, even when the template changes them (design 17.3, register #87).
+# update, even when the template changes them.
 _skip_if_exists:
   - ".claude/rules/project.md"
   - "working/spec/**"

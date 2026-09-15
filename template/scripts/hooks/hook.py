@@ -1,4 +1,4 @@
-"""Entry point for the Claude Code hooks (D36): all logic is in scripts/delivery/hooks.py.
+"""Entry point for the Claude Code hooks: all logic is in scripts/delivery/hooks.py.
 
 Claude Code runs hook commands with the project root as the working directory, so
 delivery.hooks resolves the repository itself. This file exists only to put

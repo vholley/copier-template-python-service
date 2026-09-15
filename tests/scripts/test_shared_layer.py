@@ -177,7 +177,7 @@ class TestStateBinding:
         assert state.bound_item(item, "feature/x") is None
 
 
-# ------------------------------------------------- state as a cache (C18, design 12.4)
+# ------------------------------------------------------------- state as a cache (C18)
 
 
 class TestStateRebuild:

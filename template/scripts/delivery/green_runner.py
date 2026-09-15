@@ -1,6 +1,6 @@
 """Run each enabled member's tests.
 
-"No tests collected" (exit 5) is a failure for enabled members (D3).
+"No tests collected" (exit 5) is a failure for enabled members.
 Usage: green_runner --base REF. Members with changes since REF are run; if none
 changed, all enabled members run.
 """

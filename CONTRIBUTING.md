@@ -73,3 +73,24 @@ git log origin/main..HEAD --format=%B | grep -q Co-Authored-By && exit 1
 ```
 
 Messages follow Conventional Commits, as the generated projects do.
+
+## Citations go stale
+
+Do not cite the artefacts a process produces, in this repository or in the projects
+generated from it. That means design-document sections, decision numbers, criteria
+identifiers, and ticket or issue references.
+
+They read as precision and decay into noise. The document gets renamed, superseded or
+deleted; the decision is revised by a later one; the tracker is migrated and the numbers
+are reassigned. The citation keeps pointing, and a reader who chases it learns nothing
+and cannot tell whether the surrounding claim is still true. Code outlives the scaffolding
+that produced it, and it is copied into projects that never had that scaffolding at all —
+a generated project has no design document to look a decision number up in.
+
+This branch shipped 37 such references before they were removed: 24 decision numbers,
+10 design-section pointers, and 3 in the repository's own tests.
+
+Write the reason instead of a pointer to it. `# bind to a branch that exists` survives
+every rename; `# bind to a branch that exists (D18)` does not. If the reasoning is too
+long to restate, it belongs in a docstring or a comment near the code, not in a reference
+to somewhere else.

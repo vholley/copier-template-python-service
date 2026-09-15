@@ -1,4 +1,4 @@
-"""Nothing from the delivery system is deployable (design 3.4, register #85).
+"""Nothing from the delivery system is deployable.
 
 DEPLOY-01  a Dockerfile COPY/ADD source outside the allowed list
 DEPLOY-02  .dockerignore missing a required entry

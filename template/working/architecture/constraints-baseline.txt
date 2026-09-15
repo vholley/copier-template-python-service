@@ -1,1 +1,1 @@
-# Grandfathered violations; this file may only shrink (D19).
+# Grandfathered violations; this file may only shrink.

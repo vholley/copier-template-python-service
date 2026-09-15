@@ -1,4 +1,4 @@
-"""The command registry: working/commands.toml (D31).
+"""The command registry: working/commands.toml.
 
 Every command the process offers is declared here once. `make help`, `/help`,
 the README table, and `make status` are generated from it.

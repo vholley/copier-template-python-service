@@ -1,6 +1,6 @@
 # Constraints
 
-Every line here names the check that enforces it (D19): Ruff rule, import-linter
+Every line here names the check that enforces it: Ruff rule, import-linter
 contract, or a rule in `scripts/delivery/constraints.py`. A rule with no check does
 not belong in this file; it belongs in the standards. `make constraints` and
 `make budgets --constraints` enforce this file; violations that existed at adoption
@@ -29,7 +29,7 @@ when listed here. Available in `scripts/delivery/constraints.py`:
 ## Protected paths
 
 Changed only through a reviewed pull request; the agent cannot edit them in a session
-(the test ratchet and review protect tests and the living spec instead, D37).
+(the test ratchet and review protect tests and the living spec instead).
 
 - working/architecture/**
 - working/standards/**

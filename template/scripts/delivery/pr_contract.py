@@ -1,4 +1,4 @@
-"""The pull-request contract (design 8.1): what must be true for a change to merge.
+"""The pull-request contract: what must be true for a change to merge.
 
 Run: uv run python -m delivery.pr_contract (--item ID | --no-item) --base REF
        --signers SOURCE --description FILE [--labels a,b] [repo]
@@ -252,7 +252,7 @@ def c07_promotions(c: Ctx) -> list[str]:
 
 
 def c08_living_spec(c: Ctx) -> list[str]:
-    """A member whose src changed has its living-spec file in the diff (D27)."""
+    """A member whose src changed has its living-spec file in the diff."""
     members = {m.group(1) for f in c.changed if (m := re.match(r"^(?:libs|apps)/([^/]+)/src/", f))}
     return [
         f"CONTRACT-08 {name} source changed but working/spec/{name}.md was not updated in this PR"

@@ -1,4 +1,4 @@
-"""Classify a pull request from its diff, never from what anyone said (design 6.5).
+"""Classify a pull request from its diff, never from what anyone said.
 
   trivial   only trivial-eligible paths, or Python that is AST-identical once
             docstrings and comments are stripped, or string-constant-only

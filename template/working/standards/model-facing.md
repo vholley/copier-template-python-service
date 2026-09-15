@@ -23,3 +23,7 @@ Every line costs context on every turn and is read literally.
 10. Assume competence. Include only what the model does not already do
     reliably. The weekly audit proposes removing instructions traces show are
     unnecessary.
+11. No citations to process artefacts. Never reference a decision number, a
+    criterion id, a design-document section or a ticket in code, comments or
+    shipped docs. They outlive what they point at, and they travel into
+    repositories that never had it. State the reason instead of pointing at it.

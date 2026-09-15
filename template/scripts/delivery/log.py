@@ -1,4 +1,4 @@
-"""The issue log: working/log.md, append-only (D42).
+"""The issue log: working/log.md, append-only.
 
 Usage: log.py add --source S --what W --missing M [--fix F] [repo]
        log.py close L-<n> --fix F [repo]

@@ -1,7 +1,7 @@
 # Criteria templates
 
 Which criteria classes a spec must include, by change type. `spec_check.py`
-reads this table (D20); a spec missing a required class is refused. Coverage
+reads this table; a spec missing a required class is refused. Coverage
 is decided here, before code.
 
 | change type | required classes |

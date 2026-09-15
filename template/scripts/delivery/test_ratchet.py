@@ -7,7 +7,7 @@ Ratchet (--base REF): compares each changed test file at REF and HEAD.
   RATCHET-04 a skip or xfail marker was added
 The label `test-change-approved` (--labels a,b) allows the change but the lines are still printed.
 
-Identity (D24, D26): a test is identified by the living-spec anchor in its
+Identity: a test is identified by the living-spec anchor in its
 @pytest.mark.spec("<file>.md#<anchor>") marker. Assertions are aggregated per
 anchor across the tests that claim it, so renames, splits, and merges that keep
 the assertions are not findings. Unmarked tests fall back to the function name.

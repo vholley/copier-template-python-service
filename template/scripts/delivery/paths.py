@@ -64,7 +64,7 @@ def read_budgets(repo: Path) -> Budgets:
 
 @dataclass(frozen=True)
 class Constraint:
-    """One line of constraints.md (D19 format; D39 parameters)."""
+    """One line of constraints.md."""
 
     id: str
     tool: str

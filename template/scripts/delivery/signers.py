@@ -2,7 +2,7 @@
 
 Sources: `file:<path>` (an OpenSSH allowed_signers file) or `github:<org>`
 (every org member's registered SSH signing keys, paired with the email
-principals git presents at verification, D28). Any failure raises FetchError;
+principals git presents at verification). Any failure raises FetchError;
 callers fail closed.
 """
 

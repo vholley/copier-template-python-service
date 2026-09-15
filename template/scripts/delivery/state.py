@@ -4,7 +4,7 @@ This module is the only writer of state.json. The file is a cache: everything
 in it is derivable from git history (acceptance commits carry `Accept:`
 trailers) and from the artifact files, so `rebuild()` can always regenerate
 it. Every read verifies a checksum and a set of consistency facts and reports
-the specific disagreement with the command that repairs it (design 12.4).
+the specific disagreement with the command that repairs it.
 """
 
 from __future__ import annotations
@@ -116,7 +116,7 @@ _CRITERIA_DEFINITION_FIELDS = ("id", "class", "statement", "verify")
 
 
 def accept_hash(path: Path) -> str:
-    """The value carried in Accept: trailers (D30).
+    """The value carried in Accept: trailers.
 
     For criteria.json, the hash covers the definition only (change_type and each
     criterion's id, class, statement, verify), because status, evidence,
@@ -243,7 +243,7 @@ def create(repo: Path, item_id: str, workflow: str, branch: str) -> State:
     if _state_path(repo, item_id).exists():
         raise StateError(f"work item {item_id} already exists")
     if not gitx.branch_exists(repo, branch):
-        gitx.run(repo, "branch", branch)  # bind to a branch that exists (D18)
+        gitx.run(repo, "branch", branch)  # bind to a branch that exists
     st = State(id=item_id, workflow=workflow, branch=branch)
     _write(repo, st)
     return st

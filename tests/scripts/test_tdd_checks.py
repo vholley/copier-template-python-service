@@ -4,7 +4,7 @@ Interfaces fixed here:
 - test_ratchet.main(["--base", <ref>, "--labels", "a,b", repo]) and ["--quality", repo]
   output `path:line: RATCHET-xx ...` / `path:line: TQ-0x ...`
 - ordering.main(["--item", id, "--base", ref, repo]); .work/<id>/tests.json maps
-  criterion id -> [{"test": "path::test_name", "commit": sha}] (D29); defects: diagnosis.md `location: file:function`
+  criterion id -> [{"test": "path::test_name", "commit": sha}]; defects: diagnosis.md `location: file:function`
 - diff_coverage.main(["--base", ref, "--coverage-json", path, repo]); budget coverage.diff.min
 """
 

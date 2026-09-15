@@ -1,4 +1,4 @@
-"""Session hooks (design 11.1, 19.2): one entry point per Claude Code event.
+"""Session hooks: one entry point per Claude Code event.
 
 Usage: python -m delivery.hooks <event>   (event JSON on stdin)
 Events: session-start, prompt, edit, post-edit, bash, ask, stop, subagent-stop.

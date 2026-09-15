@@ -8,7 +8,7 @@
 <!-- - C1 <statement>: <files> <evidence link> -->
 
 ## Decisions
-<!-- - D1 <decision>: <what happens if it is wrong>; accepted by <name> -->
+<!-- - D<n> <decision>: <what happens if it is wrong>; accepted by <name> -->
 
 ## Promotions
 <!-- ADR / living-spec / doc edits included in this PR, or "none" -->

@@ -1,4 +1,4 @@
-"""Acceptance commits (design 5.5, D6): the agent prepares, the engineer signs.
+"""Acceptance commits: the agent prepares, the engineer signs.
 
 prepare(repo, item, stage) validates the artifact for the stage, stages only
 the item's files, and writes the commit message to .work/<id>/accept-<stage>.msg.

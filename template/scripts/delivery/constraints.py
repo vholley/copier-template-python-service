@@ -1,7 +1,7 @@
 """Invariant checks that Ruff and import-linter cannot express.
 
 A rule runs only when the project lists it in working/architecture/constraints.md
-(D40); the template ships the mechanism and an example, not active rules.
+; the template ships the mechanism and an example, not active rules.
 Each rule has an ID, an anchor into working/architecture/constraints.md, and a
 remediation message written to the model-facing standard. Output is one
 `path:line: RULE-ID message` per violation. Grandfathered violations are listed
@@ -44,7 +44,7 @@ class EnvironmentOnlyInConfig(Rule):
     """INV-01: the environment is read only in the allowed modules.
 
     The allowed modules are the `[allow: a.b, c.d]` parameter on the constraint's
-    line in constraints.md (D39). With no parameter, only modules named
+    line in constraints.md. With no parameter, only modules named
     config.py may read it. Flags os.environ[...], os.environ.get(...), and
     os.getenv(...) elsewhere.
     """
@@ -104,7 +104,7 @@ def _exempt(repo: Path, f: Path, rule_id: str) -> bool:
 
 
 def active_rules(repo: Path) -> list[type[Rule]]:
-    """Rules the project has listed in constraints.md (D40); unlisted rules do not run."""
+    """Rules the project has listed in constraints.md; unlisted rules do not run."""
     listed = {c.check for c in paths.read_constraints(repo) if c.tool == "constraints.py"}
     return [r for rid, r in RULES.items() if rid in listed]
 

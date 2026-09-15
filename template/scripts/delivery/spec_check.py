@@ -1,7 +1,7 @@
 """Validate a work item's criteria.json against the criteria templates.
 
 Required classes per change type come from the table in
-working/standards/criteria-templates.md (D20). Also refuses a criterion marked
+working/standards/criteria-templates.md. Also refuses a criterion marked
 pass without evidence, or with an empty verify command.
 Run: uv run python -m delivery.spec_check --item <id> [repo]. Exit 0/1/2.
 """
@@ -65,7 +65,7 @@ def main(argv: list[str]) -> int:
         return fail(
             "spec-check",
             "criteria-templates.md not found",
-            "required classes are read from the templates, not hard-coded (D20)",
+            "required classes are read from the templates, not hard-coded",
             ["restore working/standards/criteria-templates.md"],
             "working/README.md#spec",
             env=True,

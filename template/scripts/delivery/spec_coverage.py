@@ -2,7 +2,7 @@
 
 Anchors are `<file>.md#<heading-slug>` for every `##` heading under working/spec/.
 A test claims one with `@pytest.mark.spec("core.md#refund-window")`. A spec file
-containing `status: unspecified` is reported and skipped (adoption, design 13).
+containing `status: unspecified` is reported and skipped (adoption).
 Output: `working/spec/<file>:<line>: SPEC-UNCOVERED <anchor>`. Exit 0/1/2.
 """
 
