@@ -8,14 +8,55 @@ the result. Tests that modify a generated project copy it first.
 from __future__ import annotations
 
 import functools
+import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
 import pytest
-from copier import run_copy
+
+
+def _ensure_git_identity() -> None:
+    """Make sure git can author a commit, before copier is imported.
+
+    Generation makes the scaffold commit and refuses to make it as nobody, so a
+    machine with no user.name or user.email gets a project with no commits and
+    every test that assumes one fails. CI runners have no identity; developer
+    machines almost always do, which is why this only ever broke in CI.
+
+    It has to happen above the copier import. Copier runs its tasks through
+    plumbum, which snapshots the environment when it is imported, so a variable
+    set later -- in a fixture, say -- never reaches them.
+
+    An identity the machine already has is left alone. The check runs outside any
+    repository, because a local .git/config would answer for this checkout and not
+    for the projects the tests generate elsewhere.
+    """
+    def configured(key: str) -> str:
+        return subprocess.run(
+            ["git", "config", key],
+            cwd=tempfile.gettempdir(),
+            capture_output=True,
+            text=True,
+            check=False,
+        ).stdout.strip()
+
+    if configured("user.name") and configured("user.email"):
+        return
+    config = Path(tempfile.mkdtemp(prefix="template-tests-git-")) / "config"
+    config.write_text(
+        "[user]\n\tname = template tests\n\temail = tests@example.invalid\n",
+        encoding="utf-8",
+    )
+    os.environ["GIT_CONFIG_GLOBAL"] = str(config)
+
+
+_ensure_git_identity()
+
+from copier import run_copy  # noqa: E402 - must follow _ensure_git_identity()
 
 TEMPLATE = str(Path(__file__).parent.parent)
 

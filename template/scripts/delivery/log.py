@@ -1,7 +1,12 @@
 """The issue log: working/log.md, append-only.
 
+Recording a fix and closing an entry are two acts. `add --fix` writes down what
+the fix will be; the entry stays open until someone says the fix has landed and
+nothing remains. Follow-up work is its own entry, not a reason to hold this one
+open.
+
 Usage: log.py add --source S --what W --missing M [--fix F] [repo]
-       log.py close L-<n> --fix F [repo]
+       log.py close L-<n> [--fix F] [repo]
        log.py open [repo]            (prints open entries; exit 1 if any)
 """
 
@@ -50,39 +55,54 @@ def add(repo: Path, source: str, what: str, missing: str, fix: str) -> str:
     """Append an entry; returns its id."""
     path = repo / LOG_FILE
     text = (
-        path.read_text()
+        path.read_text(encoding="utf-8")
         if path.exists()
         else "# Issue log\n\nAppend-only. Status moves from open to closed only.\n"
     )
     ids = [int(e["id"][2:]) for e in entries(text)]
     lid = f"L-{(max(ids) if ids else 0) + 1}"
     today = datetime.now(UTC).date().isoformat()
-    status = "closed" if fix else "open"
+    # Always open. A fix written at the moment the issue is raised has not landed,
+    # been reviewed, or been shown to work, and the weekly audit reads open entries:
+    # an entry born closed is one the audit never sees.
     entry = (
-        f"\n## {lid} · {today} · {source} · {status}\n"
+        f"\n## {lid} · {today} · {source} · open\n"
         f"What happened: {what}\nWhich definition was missing: {missing}\n"
+        f"Fix: {fix or '(open)'}\n"
     )
-    entry += f"Fix: {fix} Closed {today}.\n" if fix else "Fix: (open)\n"
-    path.write_text(text.rstrip("\n") + "\n" + entry)
+    path.write_text(text.rstrip("\n") + "\n" + entry, encoding="utf-8")
     return lid
 
 
 def close(repo: Path, lid: str, fix: str) -> bool:
-    """Mark an entry closed with its fix. Returns False when the id is unknown or already closed."""
+    """Close an open entry, keeping the fix it already carries.
+
+    fix is optional: it fills in an entry raised without one, and is appended to an
+    entry that has one. Returns False when the id is unknown or already closed.
+    """
     path = repo / LOG_FILE
-    text = path.read_text()
+    text = path.read_text(encoding="utf-8")
     m = re.search(rf"^## {re.escape(lid)} · (\S+) · (.+?) · open\s*$", text, re.M)
     if not m:
         return False
     today = datetime.now(UTC).date().isoformat()
     text = text[: m.start()] + f"## {lid} · {m.group(1)} · {m.group(2)} · closed" + text[m.end() :]
+
+    def _closed(match: re.Match[str]) -> str:
+        recorded = match.group("fix").strip()
+        if recorded == "(open)":
+            recorded = fix or "(no fix given)"
+        elif fix:
+            recorded = f"{recorded} {fix}"
+        return f"{match.group('head')}Fix: {recorded} Closed {today}."
+
     text = re.sub(
-        rf"(## {re.escape(lid)} ·[^\n]*\n(?:[^\n]*\n)*?)Fix: \(open\)",
-        rf"\1Fix: {fix} Closed {today}.",
+        rf"(?P<head>## {re.escape(lid)} ·[^\n]*\n(?:[^\n]*\n)*?)Fix: (?P<fix>[^\n]*)",
+        _closed,
         text,
         count=1,
     )
-    path.write_text(text)
+    path.write_text(text, encoding="utf-8")
     return True
 
 
@@ -108,7 +128,7 @@ def _cmd_add(argv: list[str], repo: Path) -> int:
 
 def _cmd_close(argv: list[str], repo: Path) -> int:
     lid = argv[1] if len(argv) > 1 else ""
-    if not lid or not close(repo, lid, _arg(argv, "--fix") or "(no fix given)"):
+    if not lid or not close(repo, lid, _arg(argv, "--fix")):
         return fail(
             "log",
             f"{lid or '?'} is not an open entry",
@@ -122,7 +142,7 @@ def _cmd_close(argv: list[str], repo: Path) -> int:
 
 def _cmd_open(repo: Path) -> int:
     path = repo / LOG_FILE
-    opened = entries(path.read_text()) if path.exists() else []
+    opened = entries(path.read_text(encoding="utf-8")) if path.exists() else []
     opened = [e for e in opened if e["status"] == "open"]
     for e in opened:
         print(f"{e['id']} {e['date']} {e['source']}")

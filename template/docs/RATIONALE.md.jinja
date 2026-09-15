@@ -237,6 +237,8 @@ This project uses Git Flow. Two long-lived branches map directly to two environm
 
 Prod deploys are gated. The `prod` GitHub environment has a required-reviewers protection rule, so even an automated push to `main` waits for explicit human approval before the deployment runs.
 
+The one exception is the scaffold commit. Generation ends by committing the whole tree to `develop` with the subject `chore: generate from copier-template-python-service`, authored by whoever ran it. It is a direct commit to `develop`, which the branch rules otherwise forbid, because there is nothing to open a pull request against yet: a repository with no commits has no `HEAD`, so every command that reads the current branch fails rather than answering. Generation makes that first commit so the project is usable from its first minute. If git has no author identity configured, generation stops short of committing and prints the two `git config` commands to run first.
+
 This split keeps the feedback loop fast in dev (commit, push, see it running) while keeping prod behind a deliberate decision.
 {% if include_terraform -%}
 The same pattern applies to Terraform: `terraform apply` runs automatically on push to `develop` for dev, and on push to `main` for prod (gated by the `prod` environment's required-reviewers rule).

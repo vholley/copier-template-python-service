@@ -1,19 +1,35 @@
 repos:
-  # Ruff: lint + format
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.8.6
+  # Ruff and pyright come from the workspace, not from a pinned revision of their
+  # own. A pinned hook builds an isolated environment at a version the lock file
+  # knows nothing about, so the commit hook and `make green` format the same file
+  # two different ways -- in on the way to the commit, back on the next green --
+  # and a rule that exists in only one of the two versions fires in only one
+  # place. --force-exclude keeps [tool.ruff] exclude honoured when pre-commit
+  # passes filenames explicitly.
+  - repo: local
     hooks:
       - id: ruff
-        args: [--fix]
+        name: ruff check
+        entry: uv run ruff check --fix --force-exclude
+        language: system
+        types_or: [python, pyi]
+        require_serial: true
       - id: ruff-format
-
-  # Pyright: strict type checking
-  - repo: https://github.com/RobertCraigie/pyright-python
-    rev: v1.1.390
-    hooks:
+        name: ruff format
+        entry: uv run ruff format --force-exclude
+        language: system
+        types_or: [python, pyi]
+        require_serial: true
       - id: pyright
+        name: pyright
+        entry: uv run pyright
+        language: system
+        types_or: [python, pyi]
+        pass_filenames: false
+        require_serial: true
 
-  # General file hygiene
+  # General file hygiene. These stay pinned: they are not tools the workspace
+  # resolves, so there is no second version to disagree with.
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:

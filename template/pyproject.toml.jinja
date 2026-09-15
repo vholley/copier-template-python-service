@@ -142,9 +142,7 @@ exclude_lines = [
 root_packages = ["shared"]
 include_external_packages = true
 
-[[tool.importlinter.contracts]]
-name = "PKG-01: libs do not import apps (working/architecture/constraints.md#pkg-01)"
-type = "forbidden"
-source_modules = ["shared"]
-forbidden_modules = []
+# PKG-01 (libs do not import apps) is written by scripts/new-app.sh with the
+# first app and extended with each one after: a forbidden contract naming no
+# modules forbids nothing.
 {%- endif %}

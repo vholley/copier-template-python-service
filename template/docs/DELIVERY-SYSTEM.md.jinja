@@ -65,6 +65,8 @@ The improvement discipline behind all six is Mitchell Hashimoto's: whenever an a
 
 ### Before code
 
+A generated project has nothing to change yet, so the first answer `make start` offers is to set the project up: a `project` work item at intent, whose intent states what the system is for and which members it starts with, and whose next step is `/architect` rather than `/spec`. The answer stops being offered once the first app or spec member exists. Everything below is the shape of an ordinary change.
+
 A human runs `/intent` and writes what is wanted, why, the constraints, the non-goals, and what done means. The intent-then-spec shape follows Anthropic's playbook [5]; the requirement that each criterion be backed by a test, so that completion is computed rather than asserted, follows Sinclair's steel-thread process [11]. The agent runs `/clarify`: contradictions with the living specification first, then only the questions whose answers change what is built, everything else logged as an assumption with its risk. Every decision the agent proposes is an entry with the alternative rejected and what breaks if it is wrong; the human accepts each one by commit. The agent drafts a specification as a delta against the living spec, with criteria that start as failing and can only pass with linked evidence. The human accepts it.
 
 ### During code

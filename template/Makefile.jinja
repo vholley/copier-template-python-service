@@ -161,9 +161,12 @@ amend:  ## Change an accepted artifact, one criterion at a time (run /amend in C
 observe:  ## Record a residual observation (see working/README.md#observations)
 	$(DELIVERY).observe $(ARGS)
 
-.PHONY: log log-open
+.PHONY: log log-close log-open
 log:  ## Record an issue: make log WHAT="..." MISSING="..." [FIX="..."] [SOURCE=...]
 	$(DELIVERY).log add --source "$(or $(SOURCE),session)" --what "$(WHAT)" --missing "$(MISSING)" $(if $(FIX),--fix "$(FIX)")
+
+log-close:  ## Close an entry once its fix has landed: make log-close ID=L-3 [FIX="..."]
+	$(DELIVERY).log close $(ID) $(if $(FIX),--fix "$(FIX)")
 
 log-open:  ## List open issue-log entries (exit 1 if any)
 	$(DELIVERY).log open

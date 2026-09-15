@@ -137,28 +137,48 @@ _message_after_update: |
 # those directories are deleted immediately after.
 _tasks:
   - "[ -d .git ] || git init -b develop"
+  # The scaffold commit. Without it the project has no commits, so git rev-parse
+  # HEAD fails and every command that reads the branch raises instead of
+  # answering. It is the one commit that goes straight to develop, because there
+  # is no base to open a pull request against yet. Identity comes from the
+  # engineer's own git config: the commit is theirs, not the template's.
   - >-
-    case "$(basename "$PWD")" in copier._main.*) ;; *)
-    git rev-list -1 HEAD >/dev/null 2>&1 || echo '
+    case "$(basename "$PWD")" in copier._main.*) exit 0 ;; esac;
+    git rev-list -1 HEAD >/dev/null 2>&1 && exit 0;
+    if [ -z "$(git config user.name)" ] || [ -z "$(git config user.email)" ]; then
+    echo '
+    Generated, but not committed: git has no author identity here. Set one, then
+    make the scaffold commit yourself:
+
+      git config --global user.name "Your Name"
+      git config --global user.email "you@example.com"
+      git add -A && git commit -m "chore: generate from copier-template-python-service"
+    ';
+    exit 0;
+    fi;
+    git add -A;
+    git commit -q -m "chore: generate from copier-template-python-service"
+  - >-
+    case "$(basename "$PWD")" in copier._main.*) exit 0 ;; esac;
+    if git rev-list -1 HEAD >/dev/null 2>&1; then echo '
     Generation complete. Next steps:
       1. cd {{ _copier_conf.dst_path.name }}
       2. ./scripts/bootstrap.sh
-      3. git add . && git commit -m "chore: initial commit"
-      4. git checkout -b main && git checkout develop
-      5. git remote add origin <your-github-repo-url>
-      6. git push -u origin develop main
+      3. git checkout -b main && git checkout develop
+      4. git remote add origin <your-github-repo-url>
+      5. git push -u origin develop main
 
       Then configure branch protection and GitHub Environments — see README.md.
 
       To pull future template updates:
       copier update --trust --skip-answered
-    '; esac
+    '; fi
   - >-
-    {% if enable_delivery %}case "$(basename "$PWD")" in copier._main.*) ;; *)
-    git rev-list -1 HEAD >/dev/null 2>&1 || echo '
+    {% if enable_delivery %}case "$(basename "$PWD")" in copier._main.*) exit 0 ;; esac;
+    if git rev-list -1 HEAD >/dev/null 2>&1; then echo '
     Delivery system installed. Two more setup steps:
       7. make hooks          (installs pre-commit and the Claude Code hooks)
       8. Register your SSH key as a GitHub signing key and protect it per use
          (see working/README.md, "Signing acceptances"). Acceptance commits
          require it; ordinary commits do not.
-    '; esac{% else %}true{% endif %}
+    '; fi{% else %}true{% endif %}

@@ -1,0 +1,47 @@
+"""Tests for shared.config."""
+
+from __future__ import annotations
+
+import pytest
+from shared.config import BaseAppSettings
+
+
+class _Settings(BaseAppSettings):
+    """A subclass with fields, since the base class deliberately has none."""
+
+    portal_url: str = "http://localhost:8080"
+    max_retries: int = 3
+
+
+@pytest.fixture(autouse=True)
+def _clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Start from an environment that says nothing about these fields."""
+    for name in ("MAX_RETRIES", "max_retries", "PORTAL_URL", "portal_url"):
+        monkeypatch.delenv(name, raising=False)
+
+
+{% if enable_delivery %}@pytest.mark.spec("shared.md#settings-fall-back-to-their-declared-defaults")
+{% endif %}def test_defaults_apply_when_nothing_is_set() -> None:
+    settings = _Settings()
+    assert settings.max_retries == 3
+    assert settings.portal_url == "http://localhost:8080"
+
+
+{% if enable_delivery %}@pytest.mark.spec("shared.md#settings-come-from-the-environment")
+{% endif %}def test_an_environment_variable_overrides_a_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MAX_RETRIES", "7")
+    assert _Settings().max_retries == 7
+
+
+{% if enable_delivery %}@pytest.mark.spec("shared.md#settings-come-from-the-environment")
+{% endif %}def test_the_variable_name_is_not_case_sensitive(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A field `max_retries` reads MAX_RETRIES, and the lowercase form too."""
+    monkeypatch.setenv("max_retries", "5")
+    assert _Settings().max_retries == 5
+
+
+{% if enable_delivery %}@pytest.mark.spec("shared.md#settings-come-from-the-environment")
+{% endif %}def test_an_unknown_variable_is_ignored(monkeypatch: pytest.MonkeyPatch) -> None:
+    """extra="ignore": a stray variable in the environment is not an error."""
+    monkeypatch.setenv("SOMETHING_ELSE_ENTIRELY", "x")
+    assert _Settings().max_retries == 3

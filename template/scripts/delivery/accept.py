@@ -14,7 +14,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from delivery import gitx, state
+from delivery import block, gitx, state
 from delivery.block import fail
 
 if TYPE_CHECKING:
@@ -228,6 +228,7 @@ def opted_out(repo: Path, branch: str) -> bool:
     )
 
 
+@block.guard_unborn
 def main(argv: list[str]) -> int:
     """Entry point: --prepare or --sign, --stage, [--item], [--reason]."""
     stage = argv[argv.index("--stage") + 1] if "--stage" in argv else ""

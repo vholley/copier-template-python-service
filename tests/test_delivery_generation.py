@@ -6,6 +6,7 @@ Red for plan step S1: C01, C02, C04. Later steps add their own tests here.
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -58,7 +59,10 @@ class TestDeliveryOff:
             "README.md", "scripts/new-app.sh", ".copier-answers.yml",
             "docs/RATIONALE.md", "docs/DEVELOPING.md", "docs/SETUP.md",  # gain a delivery section (S9)
             "app-template/pyproject.toml",  # gains [tool.delivery] (S11)
+            "libs/shared/pyproject.toml",  # gains [tool.delivery] too
             "app-template/tests/test_main.py",  # gains the spec marker (S11)
+            "libs/shared/tests/test_config.py",  # gain the spec marker
+            "libs/shared/tests/test_logging_setup.py",
         }
         diffs = [p for p, b in plain.items() if p not in replaced and full.get(p) != b]
         assert diffs == []
@@ -128,12 +132,17 @@ class TestHookEntryPoint:
 
     @pytest.fixture
     def project(self, delivery_copy: Path) -> Path:
-        """The copy as a real repository: the hooks read git state, as they would in use."""
-        git = ["git", "-c", "user.name=t", "-c", "user.email=t@example.invalid"]
-        subprocess.run(["git", "init", "-q", "-b", "develop"], cwd=delivery_copy, check=True)
-        subprocess.run(["git", "symbolic-ref", "HEAD", "refs/heads/develop"], cwd=delivery_copy, check=True)
-        subprocess.run([*git, "add", "-A"], cwd=delivery_copy, capture_output=True, check=True)
-        subprocess.run([*git, "commit", "-q", "-m", "chore: init"], cwd=delivery_copy, check=True)
+        """Generation leaves a committed repository, so the copy is already one.
+
+        The hooks read git state; before the scaffold commit existed this fixture
+        had to create it by hand.
+        """
+        assert (delivery_copy / ".git").is_dir(), "generation did not initialise a repository"
+        head = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=delivery_copy, capture_output=True, text=True, check=True,
+        ).stdout.strip()
+        assert head == "develop", head
         return delivery_copy
 
     def _run(self, project: Path, event: str, payload: str) -> subprocess.CompletedProcess[str]:
@@ -165,6 +174,313 @@ class TestHookEntryPoint:
         payload = json.dumps({"tool_input": {"file_path": str(target)}})
         r = self._run(project, "edit", payload)
         assert r.returncode == 0, (r.returncode, r.stdout, r.stderr)
+
+
+_IMPORT_PROBE = """
+import importlib, pathlib, sys
+sys.path[:] = [p for p in sys.path if "site-packages" not in p and "dist-packages" not in p]
+sys.path.insert(0, "scripts")
+bad = []
+for f in sorted(pathlib.Path("scripts/delivery").glob("*.py")):
+    if f.stem == "__init__":
+        continue
+    try:
+        importlib.import_module("delivery." + f.stem)
+    except Exception as exc:
+        bad.append(f.stem + ": " + repr(exc))
+print("\\n".join(bad))
+sys.exit(1 if bad else 0)
+"""
+
+
+def _hook_commands(project: Path) -> dict[str, str]:
+    """Event name -> the command string Claude Code will run, read from settings.json."""
+    settings = json.loads((project / ".claude" / "settings.json").read_text(encoding="utf-8"))
+    out: dict[str, str] = {}
+    for matchers in settings["hooks"].values():
+        for matcher in matchers:
+            for hook in matcher["hooks"]:
+                command = hook["command"]
+                out[command.rsplit(" ", 1)[-1]] = command
+    return out
+
+
+class TestHooksRunWithoutWorkspaceResolution:
+    """A hook must not need the workspace to resolve before it can say yes or no.
+
+    A plain `uv run` resolves the whole workspace first. One member with a missing
+    or unparseable pyproject.toml -- an app half-created, a merge in progress -- and
+    uv exits 2 with its own error, which Claude Code reads as a refusal: every
+    prompt and every edit is now blocked for a reason the agent cannot act on, at
+    exactly the moment the repository is in a state worth guarding. --no-project
+    skips the resolution, and the delivery package imports nothing outside the
+    standard library, so there is no environment to build.
+    """
+
+    @pytest.fixture
+    def project(self, delivery_copy: Path) -> Path:
+        return delivery_copy
+
+    def _uv(self) -> str:
+        found = shutil.which("uv")
+        if found is None:
+            pytest.skip("uv is not on PATH")
+        return found
+
+    def test_every_hook_command_skips_workspace_resolution(self, project: Path) -> None:
+        """--no-project is the whole fix: it is the resolution step that failed."""
+        for event, command in _hook_commands(project).items():
+            assert "--no-project" in command.split(), (event, command)
+
+    def test_every_hook_command_has_the_same_shape(self, project: Path) -> None:
+        for event, command in _hook_commands(project).items():
+            expected = f"uv run --no-project --quiet python scripts/hooks/hook.py {event}"
+            assert command == expected, (event, command)
+
+    def test_the_settings_command_runs_with_a_broken_workspace_member(
+        self, project: Path
+    ) -> None:
+        """The exact string from settings.json, on a workspace uv would refuse."""
+        self._uv()
+        broken = project / "apps" / "broken"
+        (broken / "src" / "broken").mkdir(parents=True)
+        (broken / "src" / "broken" / "__init__.py").write_text("", encoding="utf-8")
+        command = _hook_commands(project)["prompt"]
+        r = subprocess.run(
+            command, shell=True, cwd=project, input="{}",
+            capture_output=True, text=True, check=False,
+        )
+        assert r.returncode in (0, 2), (r.returncode, r.stdout, r.stderr)
+        assert "uv" not in r.stderr.lower(), r.stderr
+        assert "Traceback" not in r.stderr, r.stderr
+        if r.returncode == 2:
+            lines = [ln for ln in r.stderr.splitlines() if ln.strip()]
+            assert len(lines) == 4, lines
+
+    def test_delivery_imports_with_no_third_party_packages(self, project: Path) -> None:
+        """What lets the hooks drop uv: nothing under scripts/delivery needs a venv."""
+        r = subprocess.run(
+            [PYTHON, "-c", _IMPORT_PROBE],
+            cwd=project, capture_output=True, text=True, check=False,
+        )
+        assert r.returncode == 0, r.stdout + r.stderr
+
+    def test_a_raising_hook_renders_a_block(self, project: Path) -> None:
+        """Whatever goes wrong, Claude Code gets a block it can read, not a stack trace.
+
+        A hand-edited state.json holding a list parses as JSON and then fails on the
+        first attribute access, which is the shape of failure no handler anticipates.
+        """
+        item = project / ".work" / "W-1"
+        item.mkdir(parents=True)
+        (item / "state.json").write_text("[]", encoding="utf-8")
+        r = subprocess.run(
+            [PYTHON, "scripts/hooks/hook.py", "prompt"],
+            cwd=project, input="{}", capture_output=True, text=True, check=False,
+        )
+        assert r.returncode == 2, (r.returncode, r.stdout, r.stderr)
+        assert "Traceback" not in r.stderr, r.stderr
+        lines = [ln for ln in r.stderr.splitlines() if ln.strip()]
+        assert len(lines) == 4, lines
+        assert lines[0].startswith("BLOCKED  hook: prompt failed:"), lines[0]
+        assert lines[2] == "NEXT     make ci", lines[2]
+
+
+class TestScaffoldCommit:
+    """Generation leaves a committed repository, not a dirty working tree.
+
+    A fresh project has no commits, so `git rev-parse HEAD` fails and anything
+    that reads the branch raises. The engineer's first act had to be a direct
+    commit to develop, which branching.md forbids and which no pull request can
+    cover, because there is no base to open one against.
+    """
+
+    SUBJECT = "chore: generate from copier-template-python-service"
+
+    def _git(self, project: Path, *args: str) -> str:
+        return subprocess.run(
+            ["git", *args], cwd=project, capture_output=True, text=True, check=True
+        ).stdout.strip()
+
+    def test_generation_leaves_exactly_one_commit(self, delivery_project: Path) -> None:
+        assert self._git(delivery_project, "rev-list", "--count", "HEAD") == "1"
+
+    def test_the_commit_is_on_develop(self, delivery_project: Path) -> None:
+        assert self._git(delivery_project, "rev-parse", "--abbrev-ref", "HEAD") == "develop"
+
+    def test_the_commit_has_the_scaffold_subject(self, delivery_project: Path) -> None:
+        assert self._git(delivery_project, "log", "-1", "--format=%s") == self.SUBJECT
+
+    def test_the_commit_is_authored_by_the_generating_user(self, delivery_project: Path) -> None:
+        """Not by the template, and not by a placeholder: the engineer owns it."""
+        expected_name = self._git(delivery_project, "config", "user.name")
+        expected_email = self._git(delivery_project, "config", "user.email")
+        assert self._git(delivery_project, "log", "-1", "--format=%an") == expected_name
+        assert self._git(delivery_project, "log", "-1", "--format=%ae") == expected_email
+
+    def test_nothing_is_left_uncommitted(self, delivery_project: Path) -> None:
+        assert self._git(delivery_project, "status", "--porcelain") == ""
+
+    def test_status_runs_and_reports_no_work_item(self, delivery_project: Path) -> None:
+        """`make status` is a one-line wrapper over this; the module is what it runs."""
+        env = {**__import__("os").environ, "PYTHONPATH": "scripts"}
+        r = subprocess.run(
+            [PYTHON, "-m", "delivery.status"],
+            cwd=delivery_project, env=env, capture_output=True, text=True, check=False,
+        )
+        assert r.returncode == 0, r.stdout + r.stderr
+        assert "Traceback" not in r.stderr, r.stderr
+        assert "no work item" in (r.stdout + r.stderr).lower()
+
+    def test_makefile_status_target_calls_it(self, delivery_project: Path) -> None:
+        makefile = (delivery_project / "Makefile").read_text(encoding="utf-8")
+        assert _re.search(r"^status:", makefile, _re.M)
+        assert "delivery.status" in makefile or "$(DELIVERY).status" in makefile
+
+    def test_plain_project_is_committed_too(self, plain_project: Path) -> None:
+        """The scaffold commit is not a delivery-system feature."""
+        assert self._git(plain_project, "rev-list", "--count", "HEAD") == "1"
+        assert self._git(plain_project, "log", "-1", "--format=%s") == self.SUBJECT
+
+
+class TestBugNotesGoToTheIssueLog:
+    """A bug note belongs where the weekly audit reads, not in the agent's rules.
+
+    branching.md told the agent to append what it learned to project.md. That file
+    is under .claude/, which the edit guard protects, so the instruction could not
+    be followed; and nothing reads it, so a note landing there is invisible to the
+    audit that exists to find repeated failures.
+    """
+
+    def _rules(self, project: Path, name: str) -> str:
+        return (project / ".claude" / "rules" / name).read_text(encoding="utf-8")
+
+    def test_branching_sends_bugs_to_the_log(self, delivery_project: Path) -> None:
+        text = self._rules(delivery_project, "branching.md")
+        section = text.split("## Bug and issue documentation")[1]
+        assert "make log" in section
+
+    def test_branching_does_not_name_project_md_as_a_write_target(
+        self, delivery_project: Path
+    ) -> None:
+        section = self._rules(delivery_project, "branching.md").split(
+            "## Bug and issue documentation"
+        )[1]
+        assert "Project-specific notes" not in section
+        assert "project.md" not in section
+
+    def test_branching_says_not_to_edit_the_rules(self, delivery_project: Path) -> None:
+        section = self._rules(delivery_project, "branching.md").split(
+            "## Bug and issue documentation"
+        )[1]
+        assert ".claude/" in section
+
+    def test_nothing_points_bug_notes_at_untracked_docs(self, delivery_project: Path) -> None:
+        """docs/ is in .gitignore, so a record written there is lost on the next clone."""
+        section = self._rules(delivery_project, "branching.md").split(
+            "## Bug and issue documentation"
+        )[1]
+        assert "docs/incidents" not in section
+
+    def test_the_rules_have_no_unterminated_code_fence(self, delivery_project: Path) -> None:
+        for name in ("branching.md", "project.md"):
+            fences = self._rules(delivery_project, name).count("```")
+            assert fences % 2 == 0, (name, fences)
+
+    def test_project_md_says_the_agent_does_not_write_there(
+        self, delivery_project: Path
+    ) -> None:
+        text = self._rules(delivery_project, "project.md")
+        assert "agent" in text
+        assert "pull request" in text
+
+
+class TestSetUpShipsWithTheProject:
+    """The set-up answer needs its template and its documentation in the output."""
+
+    def test_the_project_intent_template_ships(self, delivery_project: Path) -> None:
+        tpl = delivery_project / ".claude/skills/intent/templates/intent-project.md"
+        assert tpl.exists()
+        assert "workflow: project" in tpl.read_text(encoding="utf-8")
+
+    def test_the_process_intent_template_ships(self, delivery_project: Path) -> None:
+        tpl = delivery_project / ".claude/skills/intent/templates/intent-process.md"
+        assert tpl.exists()
+        assert "workflow: project" in tpl.read_text(encoding="utf-8")
+
+    def test_the_intent_skill_names_both(self, delivery_project: Path) -> None:
+        skill = (delivery_project / ".claude/skills/intent/SKILL.md").read_text(encoding="utf-8")
+        assert "intent-project.md" in skill
+        assert "intent-process.md" in skill
+
+    def test_the_protected_rule_names_the_exception(self, delivery_project: Path) -> None:
+        """The README and the constraints file must not contradict the guard."""
+        readme = (delivery_project / "working/README.md").read_text(encoding="utf-8")
+        constraints = (
+            delivery_project / "working/architecture/constraints.md"
+        ).read_text(encoding="utf-8")
+        assert "process-change" in readme
+        assert "project" in constraints.split("## Protected paths")[1].split("## ")[0]
+
+    def test_start_offers_it_on_a_fresh_project(self, delivery_copy: Path) -> None:
+        """End to end: generation leaves a project with no members, so it is offered.
+
+        This is the smoke test for the scaffold commit as much as for set-up: on a
+        repository with no commits `make start` raised instead of answering, so the
+        fact that it prints a menu at all is the thing being asserted.
+        """
+        env = {**__import__("os").environ, "PYTHONPATH": "scripts"}
+        r = subprocess.run(
+            [PYTHON, "-m", "delivery.start"],
+            cwd=delivery_copy, env=env, capture_output=True, text=True, check=False,
+        )
+        assert r.returncode == 0, r.stdout + r.stderr
+        assert "Traceback" not in r.stderr, r.stderr
+        offered = [
+            ln.split()[0] for ln in r.stdout.splitlines() if ln.startswith("  ")
+        ]
+        assert offered == [
+            "set-up", "quick-change", "change", "bug-fix", "explore",
+            "process-change", "opt-out",
+        ], r.stdout
+
+
+class TestGeneratedFilesEndCleanly:
+    """end-of-file-fixer must find nothing to fix in what generation committed.
+
+    Otherwise the engineer's first `git commit` fails on files they did not write,
+    and the scaffold commit carries a diff the very next hook run wants to undo.
+    A file holding nothing but a newline is the case that is easy to miss: the
+    hook truncates it to empty rather than leaving the newline alone.
+
+    Tracked files only, which is what pre-commit sees. Generation writes docs/
+    too, but .gitignore excludes it, so no hook ever reads those.
+    """
+
+    @pytest.fixture(params=["delivery", "plain"])
+    def project(self, request: pytest.FixtureRequest) -> Path:
+        return request.getfixturevalue(f"{request.param}_project")
+
+    def test_no_file_is_left_for_end_of_file_fixer(self, project: Path) -> None:
+        tracked = subprocess.run(
+            ["git", "ls-files"], cwd=project, capture_output=True, text=True, check=True
+        ).stdout.split()
+        assert tracked, "generation left nothing committed"
+        offenders: list[tuple[str, str]] = []
+        for rel in sorted(tracked):
+            path = project / rel
+            if not path.is_file():
+                continue
+            data = path.read_bytes()
+            if not data:
+                continue
+            if not data.strip():
+                offenders.append((rel, "holds only whitespace; the hook empties it"))
+            elif not data.endswith(b"\n"):
+                offenders.append((rel, "no final newline"))
+            elif data.endswith(b"\n\n"):
+                offenders.append((rel, "blank line at end of file"))
+        assert offenders == [], offenders
 
 
 class TestDeliveryAnswers:
@@ -246,6 +562,13 @@ class TestGitignore:
 # ------------------------------------------------------------------- S8 (C09 to C12, C16)
 
 import re as _re
+
+
+def _slugify(title: str) -> str:
+    """GitHub-style heading slug; mirrors delivery.spec_coverage.slug."""
+    s = _re.sub(r"[^\w\s-]", "", title.lower()).strip()
+    return _re.sub(r"[\s_]+", "-", s)
+
 import shutil
 
 import yaml as _yaml
@@ -317,6 +640,62 @@ class TestPreCommit:
         env = {"PYTHONPATH": "scripts"}
         assert subprocess.run([PYTHON, str(script), str(good)], cwd=delivery_copy, env={**__import__("os").environ, **env}).returncode == 0
         assert subprocess.run([PYTHON, str(script), str(bad)], cwd=delivery_copy, env={**__import__("os").environ, **env}).returncode == 1
+
+
+class TestPreCommitUsesTheWorkspaceTools:
+    """One resolution of ruff and pyright, shared by pre-commit, make green and CI.
+
+    The pinned ruff-pre-commit and pyright-python repos build their own isolated
+    environments at a revision the lock file knows nothing about. `ruff>=0.8.0`
+    resolves to something current while the hook stayed at v0.8.6, so pre-commit
+    and `make green` disagreed about the same file: the commit is reformatted on
+    the way in and reformatted back on the next `make green`, and a lint rule that
+    exists in one version fires in only one of the two places.
+    """
+
+    PINNED = ("ruff-pre-commit", "pyright-python")
+
+    @pytest.fixture(params=["delivery", "plain"])
+    def config(self, request: pytest.FixtureRequest) -> dict[str, object]:
+        """Both answers to enable_delivery: the tool hooks are not a delivery feature."""
+        project: Path = request.getfixturevalue(f"{request.param}_project")
+        return yaml.safe_load((project / ".pre-commit-config.yaml").read_text(encoding="utf-8"))
+
+    def _hook(self, config: dict[str, object], hook_id: str) -> dict[str, object]:
+        for repo in config["repos"]:
+            for hook in repo["hooks"]:
+                if hook["id"] == hook_id:
+                    return hook
+        pytest.fail(f"no {hook_id} hook in the generated config")
+
+    def test_no_pinned_tool_repo_remains(self, config: dict[str, object]) -> None:
+        urls = [r.get("repo", "") for r in config["repos"]]
+        for pinned in self.PINNED:
+            assert not any(pinned in url for url in urls), (pinned, urls)
+
+    @pytest.mark.parametrize("hook_id", ["ruff", "ruff-format", "pyright"])
+    def test_the_tool_hooks_run_the_workspace_binary(
+        self, config: dict[str, object], hook_id: str
+    ) -> None:
+        hook = self._hook(config, hook_id)
+        assert hook["language"] == "system", hook
+        assert hook["entry"].startswith("uv run "), hook
+
+    def test_the_hygiene_hooks_are_untouched(self, config: dict[str, object]) -> None:
+        """Those pins are the point: they are not the tools the workspace resolves."""
+        ids = {h["id"] for r in config["repos"] for h in r["hooks"]}
+        assert {
+            "trailing-whitespace", "end-of-file-fixer", "check-yaml", "check-toml",
+            "check-json", "check-merge-conflict", "check-added-large-files",
+            "detect-private-key", "mixed-line-ending", "conventional-pre-commit",
+        } <= ids, sorted(ids)
+
+    def test_ruff_still_respects_the_configured_exclude(
+        self, config: dict[str, object]
+    ) -> None:
+        """pre-commit passes filenames explicitly; without this ruff lints app-template."""
+        for hook_id in ("ruff", "ruff-format"):
+            assert "--force-exclude" in self._hook(config, hook_id)["entry"]
 
 
 class TestPyproject:
@@ -450,10 +829,9 @@ class TestMigration:
 
     def test_migration_script_creates_working_and_reports(self, plain_project: Path, delivery_project: Path, tmp_path: Path) -> None:
         old = tmp_path / "old"
+        # The copy is already a repository with the scaffold commit, so the
+        # script can report which template-replaced files were edited since.
         shutil.copytree(plain_project, old)
-        subprocess.run(["git", "init", "-q"], cwd=old, check=True)
-        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@x", "add", "-A"], cwd=old, check=True)
-        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@x", "commit", "-q", "-m", "init"], cwd=old, check=True)
         (old / "Makefile").write_text((old / "Makefile").read_text() + "\n# local edit\n")
         script = delivery_project / "scripts/migrate-to-delivery.sh"
         r = subprocess.run([require_bash(), str(script), "--from", str(delivery_project)], cwd=old, capture_output=True, text=True)
@@ -621,10 +999,9 @@ class TestCopierUpdate:
         subprocess.run([*g, "tag", "v1.0.0"], cwd=tpl, check=True)
         project = tmp_path / "proj"
         run_copy(str(tpl), str(project), data={**BASE_ANSWERS, "enable_delivery": True}, defaults=True, unsafe=True, quiet=True)
-        subprocess.run(["git", "init", "-q"], cwd=project, check=True)
+        # run_copy runs the template's tasks, so the project is already a
+        # repository with the scaffold commit on develop.
         subprocess.run([*g, "config", "gc.auto", "0"], cwd=project, check=True)
-        subprocess.run([*g, "add", "-A"], cwd=project, check=True)
-        subprocess.run([*g, "commit", "-q", "-m", "generated"], cwd=project, check=True)
         (project / "working/spec/core.md").write_text("# Core\nproject-owned\n")
         (project / "working/architecture/constraints.md").write_text("# mine\n")
         subprocess.run([*g, "add", "-A"], cwd=project, check=True)
@@ -640,6 +1017,260 @@ class TestCopierUpdate:
 
 
 # ------------------------------------------------------------------- S11 (C13)
+
+
+class TestTheLayerModelIsTheOneThatShips:
+    """A layer the template declares but never creates is a rule nobody can break.
+
+    constraints.md ended the chain at `ui`. No app-template directory, no
+    new-app contract and no check has ever mentioned it, so the one document an
+    engineer reads to learn the layer model described a layer that does not exist
+    anywhere in the project it describes.
+    """
+
+    def _declared(self, project: Path) -> list[str]:
+        """The chain as constraints.md states it, lowest layer first."""
+        text = (
+            project / "working/architecture/constraints.md"
+        ).read_text(encoding="utf-8")
+        line = next(ln for ln in text.splitlines() if "depends forward only" in ln)
+        chain = line.split(":", 1)[1]
+        return [part.strip().rstrip(".") for part in chain.split("\u2192")]
+
+    def _contracted(self, project: Path, app: str) -> list[str]:
+        """The chain as the generated import-linter contract states it, lowest first."""
+        body = (project / "pyproject.toml").read_text(encoding="utf-8")
+        block = body.split(f'name = "LAYER-{app}')[1].split("layers = [")[1].split("]")[0]
+        return [m.split(".", 1)[1] for m in _re.findall(r'"([^"]+)"', block)][::-1]
+
+    @pytest.fixture
+    def with_app(self, delivery_copy: Path) -> Path:
+        subprocess.run(["git", "init", "-q", "-b", "develop"], cwd=delivery_copy, check=True)
+        r = subprocess.run(
+            [require_bash(), "scripts/new-app.sh", "worker"],
+            cwd=delivery_copy, capture_output=True, text=True, check=False,
+        )
+        assert r.returncode == 0, r.stderr
+        return delivery_copy
+
+    def test_the_declared_chain_has_no_phantom_layer(self, delivery_project: Path) -> None:
+        assert self._declared(delivery_project) == [
+            "types", "config", "repo", "service", "runtime",
+        ]
+
+    def test_the_contract_names_the_declared_chain(self, with_app: Path) -> None:
+        assert self._contracted(with_app, "worker") == self._declared(with_app)
+
+    def test_the_app_template_ships_the_declared_directories(
+        self, delivery_project: Path
+    ) -> None:
+        src = delivery_project / "app-template/src/__APP_NAME__"
+        dirs = {d.name for d in src.iterdir() if d.is_dir() and not d.name.startswith("__")}
+        assert dirs == set(self._declared(delivery_project))
+
+    def test_a_project_that_wants_a_ui_layer_is_told_what_to_do(
+        self, delivery_project: Path
+    ) -> None:
+        """Dropping the layer must not read as forbidding it."""
+        text = (
+            delivery_project / "working/architecture/constraints.md"
+        ).read_text(encoding="utf-8")
+        section = text.split("## Layers")[1].split("## ")[0]
+        chain = next(ln for ln in section.splitlines() if "depends forward only" in ln)
+        assert "ui" not in chain.lower(), chain
+        guidance = section.replace(chain, "")
+        assert "UI layer" in guidance
+        assert "contract" in guidance
+
+
+class TestSharedIsEnabledAndTested:
+    """The one member every project starts with had no tests and ran none.
+
+    libs/shared ships BaseAppSettings and configure_logging, which every app
+    imports, and its pyproject carried no [tool.delivery] block -- so make green
+    skipped it, and there was nothing to skip. A generated project's first
+    `make test` collected zero tests from the only code it owns.
+    """
+
+    TEST_FILES = ["test_config.py", "test_logging_setup.py"]
+
+    def _tests_dir(self, project: Path) -> Path:
+        return project / "libs/shared/tests"
+
+    def _marker_anchors(self, project: Path) -> set[str]:
+        found: set[str] = set()
+        for f in sorted(self._tests_dir(project).glob("test_*.py")):
+            found.update(
+                _re.findall(
+                    r"@pytest\.mark\.spec\(\s*[\"']([^\"']+)[\"']\s*\)",
+                    f.read_text(encoding="utf-8"),
+                )
+            )
+        return found
+
+    def _spec_anchors(self, project: Path) -> set[str]:
+        text = (project / "working/spec/shared.md").read_text(encoding="utf-8")
+        return {
+            "shared.md#" + _slugify(m)
+            for m in _re.findall(r"^##\s+(.+?)\s*$", text, _re.M)
+        }
+
+    def test_shared_declares_itself_enabled(self, delivery_project: Path) -> None:
+        text = (delivery_project / "libs/shared/pyproject.toml").read_text(encoding="utf-8")
+        assert "[tool.delivery]" in text
+        assert _re.search(r"\[tool\.delivery\][^\[]*enabled\s*=\s*true", text, _re.S)
+
+    def test_plain_shared_has_no_delivery_block(self, plain_project: Path) -> None:
+        text = (plain_project / "libs/shared/pyproject.toml").read_text(encoding="utf-8")
+        assert "[tool.delivery]" not in text
+
+    @pytest.mark.parametrize("name", TEST_FILES)
+    def test_the_tests_ship_in_both_projects(
+        self, delivery_project: Path, plain_project: Path, name: str
+    ) -> None:
+        assert (self._tests_dir(delivery_project) / name).exists()
+        assert (self._tests_dir(plain_project) / name).exists()
+
+    def test_the_tests_carry_spec_markers(self, delivery_project: Path) -> None:
+        assert self._marker_anchors(delivery_project)
+
+    def test_plain_tests_carry_no_markers(self, plain_project: Path) -> None:
+        """The spec marker is registered only under enable_delivery, and
+        --strict-markers is not: an unregistered marker fails collection."""
+        for f in sorted(self._tests_dir(plain_project).glob("test_*.py")):
+            assert "pytest.mark.spec" not in f.read_text(encoding="utf-8"), f.name
+
+    def test_the_spec_file_ships_and_is_specified(self, delivery_project: Path) -> None:
+        text = (delivery_project / "working/spec/shared.md").read_text(encoding="utf-8")
+        assert "status: unspecified" not in text
+        assert _re.search(r"^##\s+", text, _re.M)
+
+    def test_every_statement_has_a_test(self, delivery_project: Path) -> None:
+        """The whole point of the spec file: no heading without a claiming test."""
+        assert self._spec_anchors(delivery_project) == self._marker_anchors(delivery_project)
+
+    def test_set_up_is_still_offered(self, delivery_project: Path) -> None:
+        """shared.md is shipped, not written by the project, so it is not a member."""
+        env = {**__import__("os").environ, "PYTHONPATH": "scripts"}
+        r = subprocess.run(
+            [PYTHON, "-m", "delivery.start"],
+            cwd=delivery_project, env=env, capture_output=True, text=True, check=False,
+        )
+        assert "set-up" in r.stdout, r.stdout + r.stderr
+
+    def test_the_tests_run_and_spec_coverage_passes(self, delivery_copy: Path) -> None:
+        subprocess.run(["uv", "sync", "--quiet"], cwd=delivery_copy, check=True)
+        r = subprocess.run(
+            ["uv", "run", "pytest", "libs/shared", "-q"],
+            cwd=delivery_copy, capture_output=True, text=True, check=False,
+        )
+        assert r.returncode == 0, (r.stdout + r.stderr)[-3000:]
+        assert _re.search(r"(\d+) passed", r.stdout), r.stdout
+        assert int(_re.search(r"(\d+) passed", r.stdout).group(1)) > 0
+        c = subprocess.run(
+            [require_make(), "spec-coverage"],
+            cwd=delivery_copy, capture_output=True, text=True, check=False,
+        )
+        assert c.returncode == 0, (c.stdout + c.stderr)[-3000:]
+
+
+class TestPkg01FollowsTheApps:
+    """A contract naming no apps forbids nothing; it only looks like a rule.
+
+    PKG-01 shipped as `forbidden_modules = []`, which import-linter accepts and
+    which permits every import it names in its own title. The rule it stands for --
+    libs do not import apps -- cannot be written before an app exists, so new-app
+    writes it with the first one and extends it with each one after.
+    """
+
+    def _pyproject(self, project: Path) -> str:
+        return (project / "pyproject.toml").read_text(encoding="utf-8")
+
+    def _forbidden(self, project: Path) -> list[str]:
+        body = self._pyproject(project).split('name = "PKG-01')[1]
+        line = next(
+            ln for ln in body.splitlines() if ln.startswith("forbidden_modules")
+        )
+        return _re.findall(r'"([^"]+)"', line)
+
+    def _new_app(self, project: Path, name: str) -> None:
+        r = subprocess.run(
+            [require_bash(), "scripts/new-app.sh", name],
+            cwd=project, capture_output=True, text=True, check=False,
+        )
+        assert r.returncode == 0, r.stderr
+
+    @pytest.fixture
+    def repo(self, delivery_copy: Path) -> Path:
+        subprocess.run(["git", "init", "-q", "-b", "develop"], cwd=delivery_copy, check=True)
+        return delivery_copy
+
+    def test_a_fresh_project_has_no_pkg01(self, delivery_project: Path) -> None:
+        """The contract, not the word: a comment explains where it comes from."""
+        assert 'name = "PKG-01' not in self._pyproject(delivery_project)
+
+    def test_lint_imports_passes_before_any_app(self, repo: Path) -> None:
+        """Removing the contract must not leave import-linter with nothing to do."""
+        subprocess.run(["uv", "sync", "--quiet"], cwd=repo, check=True)
+        r = subprocess.run(
+            ["uv", "run", "lint-imports"], cwd=repo, capture_output=True, text=True, check=False
+        )
+        assert r.returncode == 0, r.stdout + r.stderr
+
+    def test_the_first_app_writes_the_contract(self, repo: Path) -> None:
+        self._new_app(repo, "worker")
+        body = self._pyproject(repo).split('name = "PKG-01')[1]
+        assert 'type = "forbidden"' in body
+        assert 'source_modules = ["shared"]' in body
+        assert self._forbidden(repo) == ["worker"]
+
+    def test_the_second_app_is_added_to_it(self, repo: Path) -> None:
+        self._new_app(repo, "worker")
+        self._new_app(repo, "api")
+        assert self._forbidden(repo) == ["worker", "api"]
+        assert self._pyproject(repo).count('name = "PKG-01') == 1
+
+    def test_lint_imports_passes_with_apps(self, repo: Path) -> None:
+        self._new_app(repo, "worker")
+        subprocess.run(["uv", "sync", "--quiet"], cwd=repo, check=True)
+        r = subprocess.run(
+            ["uv", "run", "lint-imports"], cwd=repo, capture_output=True, text=True, check=False
+        )
+        assert r.returncode == 0, r.stdout + r.stderr
+
+    def test_a_lib_importing_an_app_is_caught(self, repo: Path) -> None:
+        """The contract has to fail something, or it is decoration again."""
+        self._new_app(repo, "worker")
+        subprocess.run(["uv", "sync", "--quiet"], cwd=repo, check=True)
+        offender = repo / "libs/shared/src/shared/leak.py"
+        offender.write_text("import worker.types\n", encoding="utf-8")
+        r = subprocess.run(
+            ["uv", "run", "lint-imports"], cwd=repo, capture_output=True, text=True, check=False
+        )
+        assert r.returncode != 0, r.stdout
+        assert "PKG-01" in r.stdout
+
+    def _constraints(self, project: Path) -> str:
+        return (
+            project / "working/architecture/constraints.md"
+        ).read_text(encoding="utf-8")
+
+    def test_a_fresh_project_states_no_pkg01_constraint(
+        self, delivery_project: Path
+    ) -> None:
+        """A constraint whose check does not exist is an orphan, and make ci says so."""
+        assert not _re.search(r"^- PKG-01 ", self._constraints(delivery_project), _re.M)
+
+    def test_the_first_app_writes_the_constraint_line(self, repo: Path) -> None:
+        self._new_app(repo, "worker")
+        line = next(ln for ln in self._constraints(repo).splitlines() if "PKG-01" in ln)
+        assert "new-app" in line, line
+
+    def test_the_second_app_does_not_repeat_the_line(self, repo: Path) -> None:
+        self._new_app(repo, "worker")
+        self._new_app(repo, "api")
+        lines = [ln for ln in self._constraints(repo).splitlines() if "PKG-01" in ln]
+        assert len(lines) == 1, lines
 
 
 class TestNewApp:
@@ -661,6 +1292,20 @@ class TestNewApp:
         assert (member / "tests/test_main.py").exists()
         marker_text = (member / "tests/test_main.py").read_text()
         assert "@pytest.mark.spec" in marker_text
+
+    def test_ci_passes_before_any_app(self, delivery_copy: Path) -> None:
+        """The state every generated project is in for its first hour.
+
+        Only the post-new-app path was covered, so a check that holds once an app
+        exists and fails before one could ship green: PKG-01's constraint line
+        outlived its contract, and `make ci` reported an orphan constraint on a
+        project nobody had touched yet.
+        """
+        subprocess.run(["uv", "sync", "--quiet"], cwd=delivery_copy, check=True)
+        r = subprocess.run(
+            [require_make(), "ci"], cwd=delivery_copy, capture_output=True, text=True, check=False
+        )
+        assert r.returncode == 0, (r.stdout + r.stderr)[-3000:]
 
     def test_new_app_then_ci_passes(self, delivery_copy: Path) -> None:
         subprocess.run(["git", "init", "-q", "-b", "develop"], cwd=delivery_copy, check=True)

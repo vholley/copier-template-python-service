@@ -77,6 +77,35 @@ and remove the status line. Until then the member is reported as unspecified
 and is not blocked.
 SPEC
 fi
+# PKG-01 names the apps libs may not import, so it grows with them. An empty
+# forbidden_modules permits every import the contract's own title forbids.
+if ! grep -q '^name = "PKG-01' "$REPO_ROOT/pyproject.toml"; then
+    cat >> "$REPO_ROOT/pyproject.toml" <<PKG
+
+[[tool.importlinter.contracts]]
+name = "PKG-01: libs do not import apps (working/architecture/constraints.md#pkg-01)"
+type = "forbidden"
+source_modules = ["shared"]
+forbidden_modules = ["$APP_NAME"]
+PKG
+    # The constraint and its check appear together: budgets --constraints refuses a
+    # constraint naming a check that does not exist.
+    CONSTRAINTS="$REPO_ROOT/working/architecture/constraints.md"
+    if [[ -f "$CONSTRAINTS" ]] && ! grep -q '^- PKG-01 ' "$CONSTRAINTS"; then
+        awk '
+          /^## Protected paths/ && !inserted {
+            print "- PKG-01 (check: importlinter PKG-01): libs do not import apps. Written here by scripts/new-app.sh with the first app."
+            print ""
+            inserted = 1
+          }
+          { print }
+        ' "$CONSTRAINTS" > "$CONSTRAINTS.new"
+        mv "$CONSTRAINTS.new" "$CONSTRAINTS"
+    fi
+elif ! grep -qE '^forbidden_modules = \[.*"'"$APP_NAME"'".*\]' "$REPO_ROOT/pyproject.toml"; then
+    sed -i.bak -E "s/^forbidden_modules = \[(.+)\]/forbidden_modules = [\1, \"$APP_NAME\"]/" "$REPO_ROOT/pyproject.toml"
+    rm -f "$REPO_ROOT/pyproject.toml.bak"
+fi
 echo "Delivery: layers contract LAYER-$APP_NAME added; working/spec/$APP_NAME.md created (unspecified)."
 {%- endif %}
 

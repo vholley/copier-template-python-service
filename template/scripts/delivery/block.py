@@ -13,8 +13,15 @@ working/README.md because docs/ is untracked and absent on a fresh clone.
 
 from __future__ import annotations
 
+import functools
 import sys
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
+
+from delivery import gitx
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 MORE_PREFIX = "working/README.md#"
 _LABEL_WIDTH = 9  # "BLOCKED  " / "WHY      " / "NEXT     " / "MORE     "
@@ -57,6 +64,41 @@ def fail(
     """Print the block to stderr and return the exit code (1, or 2 for environment errors)."""
     print(render(rule_id, what, why, next_, more), file=sys.stderr)
     return 2 if env else 1
+
+
+_UNBORN = (
+    "scaffold",
+    "this repository has no commits yet",
+    "every command starts from the current branch, and an unborn HEAD has none",
+    ['git add -A && git commit -m "chore: generate from copier-template-python-service"'],
+    "working/README.md#start",
+)
+
+
+def unborn_text() -> str:
+    """The rendered block, for callers that return text rather than print it."""
+    return render(*_UNBORN)
+
+
+def unborn_repo(*, env: bool = False) -> int:
+    """The block every entry point shows before the first commit.
+
+    env=True for the hooks: Claude Code reads a block only at exit 2.
+    """
+    return fail(*_UNBORN, env=env)
+
+
+def guard_unborn(fn: Callable[[list[str]], int]) -> Callable[[list[str]], int]:
+    """Wrap an entry point so an unborn repository blocks instead of raising."""
+
+    @functools.wraps(fn)
+    def wrapper(argv: list[str]) -> int:
+        try:
+            return fn(argv)
+        except gitx.UnbornBranchError:
+            return unborn_repo()
+
+    return wrapper
 
 
 def parse(text: str) -> Block:

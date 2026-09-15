@@ -158,7 +158,7 @@ class TestEditGuard:
         code, _o, _e = run("edit", edit_payload("libs/core/src/core/x.py"), project)
         assert code == 0
 
-    def test_protected_path_blocked_everywhere(self, project: Path) -> None:
+    def test_protected_path_blocked_on_an_unbound_branch(self, project: Path) -> None:
         git(project, "checkout", "-q", "-b", "feature-x")
         code, _o, err = run("edit", edit_payload("working/standards/budgets.md"), project)
         assert code == 2 and "protected" in err
@@ -392,3 +392,67 @@ class TestAbsolutePaths:
         payload = {"tool_input": {"file_path": str(Path.home() / "notes.txt")}}
         code, _out, _err = hooks.run("edit", payload, repo)
         assert code == 0
+
+
+PROCESS_FILES = [
+    "working/standards/budgets.md",
+    "working/architecture/constraints.md",
+    "working/architecture/overview.md",
+    ".claude/rules/branching.md",
+]
+
+
+class TestProtectedPathsDuringAProjectItem:
+    """The files a project item exists to write were the files it could not write.
+
+    /architect's whole output is working/architecture/ and working/standards/, and
+    the protected-path guard refused every one of them. The rule it enforces is
+    that process-defining files change through a reviewed pull request, and a
+    project item is exactly that: its branch opens one. So the guard asks what the
+    branch is bound to before it refuses.
+    """
+
+    def _project(self, project: Path) -> Path:
+        git(project, "checkout", "-q", "-b", "SETUP-1")
+        state.create(project, "SETUP-1", "project", "SETUP-1")
+        return project
+
+    @pytest.mark.parametrize("rel", PROCESS_FILES)
+    def test_allowed_on_a_project_item(self, project: Path, rel: str) -> None:
+        code, _o, err = run("edit", edit_payload(rel), self._project(project))
+        assert code == 0, (rel, err)
+
+    @pytest.mark.parametrize("rel", PROCESS_FILES)
+    def test_blocked_on_a_change_item(self, project: Path, rel: str) -> None:
+        bound(project, "implement")
+        code, _o, err = run("edit", edit_payload(rel), project)
+        assert code == 2, (rel, err)
+        assert "protected" in err
+
+    @pytest.mark.parametrize("rel", PROCESS_FILES)
+    def test_blocked_on_an_unbound_branch(self, project: Path, rel: str) -> None:
+        git(project, "checkout", "-q", "-b", "feature-x")
+        code, _o, err = run("edit", edit_payload(rel), project)
+        assert code == 2, (rel, err)
+        assert "protected" in err
+
+    def test_the_block_names_the_way_through(self, project: Path) -> None:
+        """A refusal that does not say how to proceed is the defect, not the block."""
+        bound(project, "implement")
+        _c, _o, err = run("edit", edit_payload("working/standards/budgets.md"), project)
+        assert "process-change" in err, err
+
+    def test_state_json_is_still_refused_on_a_project_item(self, project: Path) -> None:
+        """The derived cache is not a process file; nothing unlocks it."""
+        proj = self._project(project)
+        code, _o, err = run("edit", edit_payload(".work/SETUP-1/state.json"), proj)
+        assert code == 2 and "stage_state" in err
+
+    def test_source_edits_are_still_stage_blocked(self, project: Path) -> None:
+        """Only the protected-path rule relaxes. A project item at intent is still
+        a work item, and code before a signed intent is the thing the stages exist
+        to prevent."""
+        proj = self._project(project)
+        code, _o, err = run("edit", edit_payload("libs/core/src/core/x.py"), proj)
+        assert code == 2, err
+        assert "stage" in err

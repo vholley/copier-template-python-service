@@ -222,11 +222,13 @@ run: it signs with your key. See `working/README.md` for the workflow.
 
 Hooks run on every `git commit`. If a hook modifies files (ruff's autofix, for example), the commit is aborted; re-stage the modified files and commit again.
 
+Ruff and pyright are `language: system` hooks that shell out to `uv run`, so there is one resolution of each tool: pre-commit, `make green` and CI all execute the binary the lock file pins. Bump them by editing `[dependency-groups] dev` in `pyproject.toml` and running `uv lock --upgrade-package ruff`. The hygiene hooks and the commit-message check stay pinned to their own revisions, because the workspace does not resolve them.
+
 ```bash
 # Run all hooks against all files (after editing hook config)
 uv run pre-commit run --all-files
 
-# Update hook versions to latest
+# Update the pinned hooks (hygiene and commit-message only; not ruff or pyright)
 uv run pre-commit autoupdate
 ```
 

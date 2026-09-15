@@ -20,7 +20,7 @@ from pathlib import Path
 
 import pytest
 
-from delivery import accept, audit_observations, help as help_cmd, loop_report, observe, post_merge, start, state, status, vendored_check
+from delivery import accept, audit_observations, compute_tier, gitx, help as help_cmd, hooks, log, loop_report, observe, post_merge, start, state, state_cli, status, vendored_check
 
 
 def git(repo: Path, *args: str) -> str:
@@ -77,8 +77,10 @@ def project(repo: Path, tmp_path: Path) -> Path:
 
 
 class TestStart:
-    def test_offers_on_clean_develop(self, project: Path) -> None:
-        assert start.offers(project) == ["quick-change", "change", "bug-fix", "explore", "opt-out"]
+    def test_offers_on_clean_develop(self, established: Path) -> None:
+        assert start.offers(established) == [
+            "quick-change", "change", "bug-fix", "explore", "process-change", "opt-out",
+        ]
 
     def test_offers_on_bound_branch(self, project: Path) -> None:
         start.main(["--answer", "change", "--ticket", "PROJ-1", project.as_posix()])
@@ -303,3 +305,321 @@ class TestHousekeeping:
         git(project, "commit", "-q", "-m", "feat: a\n\nLabels: tier-override, break-glass\n")
         text = loop_report.render(project, base="develop")
         assert "tier-override" in text and "break-glass" in text
+
+
+# ------------------------------------------------- unborn branch (a repo with no commits)
+
+
+SCAFFOLD = 'git add -A && git commit -m "chore: generate from copier-template-python-service"'
+
+
+@pytest.fixture
+def unborn(tmp_path: Path) -> Path:
+    """A repository with a branch but no commits, so HEAD does not resolve.
+
+    Generation makes the scaffold commit, but stops short of it when git has no
+    author identity. The engineer meets this state next, and every command has to
+    say what to do rather than raise.
+    """
+    subprocess.run(["git", "init", "-q", "-b", "develop"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.email", "t@example.invalid"], cwd=tmp_path, check=True)
+    (tmp_path / "README.md").write_text("x\n", encoding="utf-8")
+    return tmp_path
+
+
+class TestUnbornBranch:
+    """No traceback, a four-line block, and the next command is the scaffold commit."""
+
+    def test_gitx_raises_a_named_error(self, unborn: Path) -> None:
+        with pytest.raises(gitx.UnbornBranchError):
+            gitx.current_branch(unborn)
+
+    def test_start_blocks(self, unborn: Path, capsys: pytest.CaptureFixture[str]) -> None:
+        code = start.main([str(unborn)])
+        err = capsys.readouterr().err
+        assert code == 1, err
+        assert "BLOCKED" in err and SCAFFOLD in err and "Traceback" not in err
+
+    def test_status_blocks(self, unborn: Path, capsys: pytest.CaptureFixture[str]) -> None:
+        code = status.main([str(unborn)])
+        err = capsys.readouterr().err
+        assert code == 1, err
+        assert "BLOCKED" in err and SCAFFOLD in err and "Traceback" not in err
+
+    def test_compute_tier_blocks(self, unborn: Path, capsys: pytest.CaptureFixture[str]) -> None:
+        code = compute_tier.main(["--base", "develop", str(unborn)])
+        err = capsys.readouterr().err
+        assert code == 1, err
+        assert "BLOCKED" in err and SCAFFOLD in err and "Traceback" not in err
+
+    def test_hooks_block_with_exit_two(self, unborn: Path) -> None:
+        """Hooks use exit 2: that is what Claude Code reads as a block."""
+        code, _out, err = hooks.run("prompt", {}, unborn)
+        assert code == 2, err
+        assert "BLOCKED" in err and SCAFFOLD in err and "Traceback" not in err
+
+    def test_the_block_is_four_lines(self, unborn: Path, capsys: pytest.CaptureFixture[str]) -> None:
+        start.main([str(unborn)])
+        lines = [ln for ln in capsys.readouterr().err.splitlines() if ln.strip()]
+        assert len(lines) == 4, lines
+        assert lines[0].startswith("BLOCKED")
+        assert lines[1].startswith("WHY")
+        assert lines[2].startswith("NEXT")
+        assert lines[3].startswith("MORE")
+
+    def test_state_cli_blocks(self, unborn: Path, capsys: pytest.CaptureFixture[str]) -> None:
+        code = state_cli.main(["bound", str(unborn)])
+        assert code == 1, capsys.readouterr().err
+
+    def test_accept_blocks(self, unborn: Path, capsys: pytest.CaptureFixture[str]) -> None:
+        code = accept.main(["--stage", "opt-out", str(unborn)])
+        assert code in (1, 2), capsys.readouterr().err
+
+
+@pytest.fixture
+def logged(tmp_path: Path) -> Path:
+    """A project with an empty issue log."""
+    (tmp_path / "working").mkdir()
+    (tmp_path / "working" / "log.md").write_text(
+        "# Issue log\n\nAppend-only. Status moves from open to closed only.\n", encoding="utf-8"
+    )
+    return tmp_path
+
+
+class TestIssueLogClosesExplicitly:
+    """Recording a fix and closing an entry are two acts, not one.
+
+    `make log FIX=...` used to write the entry closed, so the log said "resolved"
+    at the moment the fix was typed -- before it was reviewed, merged, or shown to
+    work. The weekly audit reads open entries, so anything written with a fix was
+    invisible to it from birth.
+    """
+
+    def _text(self, repo: Path) -> str:
+        return (repo / "working" / "log.md").read_text(encoding="utf-8")
+
+    def _status(self, repo: Path, lid: str) -> str:
+        return next(e["status"] for e in log.entries(self._text(repo)) if e["id"] == lid)
+
+    def test_an_entry_without_a_fix_is_open(self, logged: Path) -> None:
+        lid = log.add(logged, "session", "hook fired wrongly", "no rule for it", "")
+        assert self._status(logged, lid) == "open"
+
+    def test_recording_a_fix_leaves_the_entry_open(self, logged: Path) -> None:
+        """The point of the item: a written fix is not a landed fix."""
+        lid = log.add(logged, "session", "hook fired wrongly", "no rule for it", "widen the glob")
+        assert self._status(logged, lid) == "open"
+        assert "widen the glob" in self._text(logged)
+
+    def test_closing_marks_it_closed(self, logged: Path) -> None:
+        lid = log.add(logged, "session", "w", "m", "widen the glob")
+        assert log.close(logged, lid, "") is True
+        assert self._status(logged, lid) == "closed"
+
+    def test_closing_keeps_the_fix_already_recorded(self, logged: Path) -> None:
+        lid = log.add(logged, "session", "w", "m", "widen the glob")
+        log.close(logged, lid, "")
+        assert "widen the glob" in self._text(logged)
+
+    def test_closing_an_entry_with_no_fix_takes_one(self, logged: Path) -> None:
+        lid = log.add(logged, "session", "w", "m", "")
+        log.close(logged, lid, "reverted the rule")
+        assert "reverted the rule" in self._text(logged)
+        assert self._status(logged, lid) == "closed"
+
+    def test_an_entry_closes_once(self, logged: Path) -> None:
+        lid = log.add(logged, "session", "w", "m", "f")
+        log.close(logged, lid, "")
+        assert log.close(logged, lid, "") is False
+
+    def test_open_lists_a_fixed_but_unclosed_entry(
+        self, logged: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        lid = log.add(logged, "session", "w", "m", "widen the glob")
+        code = log.main(["open", str(logged)])
+        out = capsys.readouterr().out
+        assert code == 1, out
+        assert lid in out
+
+    def test_open_is_quiet_once_everything_is_closed(
+        self, logged: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        lid = log.add(logged, "session", "w", "m", "f")
+        log.close(logged, lid, "")
+        assert log.main(["open", str(logged)]) == 0
+        assert capsys.readouterr().out.strip() == ""
+
+    def test_add_through_main_does_not_close(
+        self, logged: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """`make log` is this call; it may never be the thing that closes."""
+        code = log.main(
+            ["add", "--what", "w", "--missing", "m", "--fix", "widen the glob", str(logged)]
+        )
+        assert code == 0, capsys.readouterr().err
+        assert log.entries(self._text(logged))[0]["status"] == "open"
+
+    def test_close_through_main(self, logged: Path, capsys: pytest.CaptureFixture[str]) -> None:
+        lid = log.add(logged, "session", "w", "m", "f")
+        code = log.main(["close", lid, str(logged)])
+        assert code == 0, capsys.readouterr().err
+        assert self._status(logged, lid) == "closed"
+
+    def test_closing_an_unknown_id_blocks(
+        self, logged: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        code = log.main(["close", "L-99", str(logged)])
+        err = capsys.readouterr().err
+        assert code == 1
+        assert "BLOCKED" in err and "L-99" in err
+
+
+@pytest.fixture
+def fresh(project: Path) -> Path:
+    """A generated project on its first day: libs/ only, apps/ empty, no spec members."""
+    (project / "apps").mkdir()
+    (project / "working/spec").mkdir(parents=True)
+    (project / "working/spec/README.md").write_text("# Living spec\n", encoding="utf-8")
+    git(project, "add", "-A")
+    git(project, "commit", "-q", "-m", "chore: spec placeholder")
+    return project
+
+
+@pytest.fixture
+def established(fresh: Path) -> Path:
+    """The same project once it has a member: set-up no longer applies."""
+    (fresh / "apps/worker").mkdir(parents=True)
+    (fresh / "apps/worker/pyproject.toml").write_text('[project]\nname = "worker"\n', encoding="utf-8")
+    git(fresh, "add", "-A")
+    git(fresh, "commit", "-q", "-m", "feat: worker")
+    return fresh
+
+
+class TestSetUpAnswer:
+    """The first question a generated project cannot answer is what it is.
+
+    Every answer start offered assumed the project already existed: change,
+    bug-fix and explore all bind a work item to code that has not been written.
+    The architect skill is documented as running after a signed project intent,
+    and nothing created one, so the workflow that sets a project up had no door.
+    """
+
+    FRESH_OFFERS = [
+        "set-up", "quick-change", "change", "bug-fix", "explore", "process-change", "opt-out",
+    ]
+
+    def test_set_up_is_offered_first(self, fresh: Path) -> None:
+        assert start.offers(fresh)[0] == "set-up"
+
+    def test_the_other_answers_remain(self, fresh: Path) -> None:
+        assert start.offers(fresh) == self.FRESH_OFFERS
+
+    def test_it_has_a_description(self, fresh: Path) -> None:
+        assert start.ANSWERS["set-up"]
+
+    def test_the_spec_readme_is_not_a_member(self, fresh: Path) -> None:
+        """working/spec/README.md ships with the template; it describes no member."""
+        assert (fresh / "working/spec/README.md").exists()
+        assert "set-up" in start.offers(fresh)
+
+    def test_an_app_retires_the_answer(self, established: Path) -> None:
+        assert "set-up" not in start.offers(established)
+
+    def test_a_spec_member_retires_the_answer(self, fresh: Path) -> None:
+        (fresh / "working/spec/worker.md").write_text("# worker\n", encoding="utf-8")
+        assert "set-up" not in start.offers(fresh)
+
+    def test_it_creates_a_project_item(self, fresh: Path) -> None:
+        assert start.main(["--answer", "set-up", "--ticket", "SETUP-1", fresh.as_posix()]) == 0
+        st = state.read(fresh, "SETUP-1")
+        assert st.workflow == "project"
+        assert st.stage == "intent"
+        assert st.branch == "SETUP-1"
+
+    def test_it_drafts_an_intent(self, fresh: Path) -> None:
+        start.main(["--answer", "set-up", "--ticket", "SETUP-1", fresh.as_posix()])
+        text = (fresh / ".work/SETUP-1/intent.md").read_text(encoding="utf-8")
+        assert "SETUP-1" in text
+        assert "workflow: project" in text
+
+    def test_it_drafts_from_the_shipped_template(self, fresh: Path) -> None:
+        """The skill's template is the one source; the script does not carry a second."""
+        tpl = fresh / start.PROJECT_INTENT_TEMPLATE
+        tpl.parent.mkdir(parents=True)
+        tpl.write_text(
+            "# Intent: <title>\nid: <work-id>\nworkflow: project\n\n## Members\n",
+            encoding="utf-8",
+        )
+        start.main(["--answer", "set-up", "--ticket", "SETUP-1", fresh.as_posix()])
+        text = (fresh / ".work/SETUP-1/intent.md").read_text(encoding="utf-8")
+        assert "## Members" in text
+        assert "<work-id>" not in text and "<title>" not in text
+
+    def test_it_names_the_next_two_steps(
+        self, fresh: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        start.main(["--answer", "set-up", "--ticket", "SETUP-1", fresh.as_posix()])
+        out = capsys.readouterr().out
+        assert "/intent" in out and "/architect" in out
+
+    def test_it_needs_a_ticket(self, fresh: Path, capsys: pytest.CaptureFixture[str]) -> None:
+        assert start.main(["--answer", "set-up", fresh.as_posix()]) == 1
+        err = capsys.readouterr().err
+        assert "BLOCKED" in err and "ticket" in err, err
+        assert not (fresh / ".work").exists()
+
+    def test_it_is_not_offered_once_bound(self, fresh: Path) -> None:
+        start.main(["--answer", "set-up", "--ticket", "SETUP-1", fresh.as_posix()])
+        assert start.offers(fresh) == ["continue", "abandon"]
+
+
+class TestProcessChangeAnswer:
+    """Changing the process is itself work, and it needs an item to be reviewable.
+
+    The protected-path guard tells the agent to hand the edit to the engineer. That
+    is the right answer for a stray edit and the wrong one for deliberate work on
+    the process, which then had no route at all: no item, no branch, no pull
+    request. process-change opens one.
+    """
+
+    def test_it_is_offered_on_a_clean_branch(self, established: Path) -> None:
+        assert "process-change" in start.offers(established)
+
+    def test_it_is_offered_on_a_fresh_project_too(self, fresh: Path) -> None:
+        assert "process-change" in start.offers(fresh)
+
+    def test_it_is_not_offered_while_an_item_is_bound(self, established: Path) -> None:
+        start.main(["--answer", "change", "--ticket", "PROJ-1", established.as_posix()])
+        assert "process-change" not in start.offers(established)
+
+    def test_it_has_a_description(self, established: Path) -> None:
+        assert start.ANSWERS["process-change"]
+
+    def test_it_creates_a_project_item(self, established: Path) -> None:
+        code = start.main(
+            ["--answer", "process-change", "--ticket", "PROC-1", established.as_posix()]
+        )
+        assert code == 0
+        st = state.read(established, "PROC-1")
+        assert st.workflow == "project"
+        assert st.stage == "intent"
+
+    def test_it_drafts_from_the_process_template(self, established: Path) -> None:
+        tpl = established / start.PROCESS_INTENT_TEMPLATE
+        tpl.parent.mkdir(parents=True, exist_ok=True)
+        tpl.write_text(
+            "# Intent: <title>" + chr(10) + "id: <work-id>" + chr(10)
+            + "workflow: project" + chr(10) + chr(10) + "## Which rule" + chr(10),
+            encoding="utf-8",
+        )
+        start.main(["--answer", "process-change", "--ticket", "PROC-1", established.as_posix()])
+        text = (established / ".work/PROC-1/intent.md").read_text(encoding="utf-8")
+        assert "## Which rule" in text
+        assert "<work-id>" not in text
+
+    def test_it_needs_a_ticket(
+        self, established: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        assert start.main(["--answer", "process-change", established.as_posix()]) == 1
+        assert "ticket" in capsys.readouterr().err

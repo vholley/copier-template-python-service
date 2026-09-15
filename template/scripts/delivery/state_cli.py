@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from delivery import gitx, state
+from delivery import block, gitx, state
 
 USAGE = "usage: state_cli bound | rebuild <id> | exits <state>"
 
@@ -21,6 +21,7 @@ def _bound(repo: Path) -> int:
     return 0
 
 
+@block.guard_unborn
 def main(argv: list[str]) -> int:
     """Entry point."""
     repo = Path.cwd()

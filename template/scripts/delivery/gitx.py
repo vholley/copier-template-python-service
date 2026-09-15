@@ -26,8 +26,19 @@ def run(repo: Path, *args: str, check: bool = True) -> str:
     return result.stdout
 
 
+class UnbornBranchError(RuntimeError):
+    """The repository has no commits, so HEAD names a branch that does not exist yet.
+
+    Generation makes the scaffold commit, so this is reachable only when that was
+    skipped -- git had no author identity -- or when someone re-initialised the
+    repository. Callers catch it and say what to do next.
+    """
+
+
 def current_branch(repo: Path) -> str:
-    """Name of the checked-out branch."""
+    """Name of the checked-out branch. Raises UnbornBranchError before the first commit."""
+    if run(repo, "rev-parse", "--verify", "--quiet", "HEAD", check=False).strip() == "":
+        raise UnbornBranchError(str(repo))
     return run(repo, "rev-parse", "--abbrev-ref", "HEAD").strip()
 
 
