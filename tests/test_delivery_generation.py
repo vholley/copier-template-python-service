@@ -492,6 +492,62 @@ class TestPreCommit:
         assert subprocess.run([PYTHON, str(script), str(bad)], cwd=delivery_copy, env={**__import__("os").environ, **env}).returncode == 1
 
 
+class TestPreCommitUsesTheWorkspaceTools:
+    """One resolution of ruff and pyright, shared by pre-commit, make green and CI.
+
+    The pinned ruff-pre-commit and pyright-python repos build their own isolated
+    environments at a revision the lock file knows nothing about. `ruff>=0.8.0`
+    resolves to something current while the hook stayed at v0.8.6, so pre-commit
+    and `make green` disagreed about the same file: the commit is reformatted on
+    the way in and reformatted back on the next `make green`, and a lint rule that
+    exists in one version fires in only one of the two places.
+    """
+
+    PINNED = ("ruff-pre-commit", "pyright-python")
+
+    @pytest.fixture(params=["delivery", "plain"])
+    def config(self, request: pytest.FixtureRequest) -> dict[str, object]:
+        """Both answers to enable_delivery: the tool hooks are not a delivery feature."""
+        project: Path = request.getfixturevalue(f"{request.param}_project")
+        return yaml.safe_load((project / ".pre-commit-config.yaml").read_text(encoding="utf-8"))
+
+    def _hook(self, config: dict[str, object], hook_id: str) -> dict[str, object]:
+        for repo in config["repos"]:
+            for hook in repo["hooks"]:
+                if hook["id"] == hook_id:
+                    return hook
+        pytest.fail(f"no {hook_id} hook in the generated config")
+
+    def test_no_pinned_tool_repo_remains(self, config: dict[str, object]) -> None:
+        urls = [r.get("repo", "") for r in config["repos"]]
+        for pinned in self.PINNED:
+            assert not any(pinned in url for url in urls), (pinned, urls)
+
+    @pytest.mark.parametrize("hook_id", ["ruff", "ruff-format", "pyright"])
+    def test_the_tool_hooks_run_the_workspace_binary(
+        self, config: dict[str, object], hook_id: str
+    ) -> None:
+        hook = self._hook(config, hook_id)
+        assert hook["language"] == "system", hook
+        assert hook["entry"].startswith("uv run "), hook
+
+    def test_the_hygiene_hooks_are_untouched(self, config: dict[str, object]) -> None:
+        """Those pins are the point: they are not the tools the workspace resolves."""
+        ids = {h["id"] for r in config["repos"] for h in r["hooks"]}
+        assert {
+            "trailing-whitespace", "end-of-file-fixer", "check-yaml", "check-toml",
+            "check-json", "check-merge-conflict", "check-added-large-files",
+            "detect-private-key", "mixed-line-ending", "conventional-pre-commit",
+        } <= ids, sorted(ids)
+
+    def test_ruff_still_respects_the_configured_exclude(
+        self, config: dict[str, object]
+    ) -> None:
+        """pre-commit passes filenames explicitly; without this ruff lints app-template."""
+        for hook_id in ("ruff", "ruff-format"):
+            assert "--force-exclude" in self._hook(config, hook_id)["entry"]
+
+
 class TestPyproject:
     """C12: ruff additions, import-linter, markers, dev deps."""
 
