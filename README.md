@@ -137,8 +137,8 @@ Answer `enable_delivery: false` for the base template on its own: uv workspace, 
 pytest, pre-commit and CI, with none of the process. That is what earlier versions of this
 template produced.
 
-Generated projects get `docs/system-overview.md`, which explains the approach and the
-reasoning behind it; the source is `template/docs/system-overview.md`.
+Generated projects get `docs/DELIVERY-SYSTEM.md`, which explains the approach and the
+reasoning behind it; the source is `template/docs/DELIVERY-SYSTEM.md.jinja`.
 
 ## GCP deployment
 

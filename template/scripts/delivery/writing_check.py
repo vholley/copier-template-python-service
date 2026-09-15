@@ -14,8 +14,11 @@ from pathlib import Path
 from delivery.block import fail
 
 _VOCAB = (
+    # "harness" is the domain term for an agent harness, not a tell. The tell is
+    # the verb ("harness the power of"), and excluding the noun would fire on
+    # correct usage in every project built from this template.
     "delve|tapestry|paradigm|synergy|leverage|robust|seamless|holistic|elevate|empower|"
-    "unlock|harness|game-changer|cutting-edge"
+    "unlock|game-changer|cutting-edge"
 )
 _BRIDGES = (
     "it's worth noting|it is worth noting|here's the thing|the key insight|at its core|"
