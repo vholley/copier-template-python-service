@@ -1,6 +1,6 @@
 # The Quality-First AI Delivery System: What It Is and Why
 
-A summary of the system, the thinking behind it, and the reasons for its main decisions. Written for an engineer who has not read the design document or the testing plan and wants to understand what they are joining before they read the mechanics.
+A summary of the system, the thinking behind it, and the reasons for its main decisions. Written for an engineer who wants to understand what they are joining before they read the mechanics.
 
 ---
 

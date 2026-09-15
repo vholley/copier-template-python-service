@@ -137,8 +137,7 @@ Answer `enable_delivery: false` for the base template on its own: uv workspace, 
 pytest, pre-commit and CI, with none of the process. That is what earlier versions of this
 template produced.
 
-`docs/design.md` is the design document the implementation refers to by decision number
-(D1-D42); `docs/system-overview.md` is the shorter argument for the approach.
+`docs/system-overview.md` explains the approach and the reasoning behind it.
 
 ## GCP deployment
 
