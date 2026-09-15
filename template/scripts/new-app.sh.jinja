@@ -88,6 +88,20 @@ type = "forbidden"
 source_modules = ["shared"]
 forbidden_modules = ["$APP_NAME"]
 PKG
+    # The constraint and its check appear together: budgets --constraints refuses a
+    # constraint naming a check that does not exist.
+    CONSTRAINTS="$REPO_ROOT/working/architecture/constraints.md"
+    if [[ -f "$CONSTRAINTS" ]] && ! grep -q '^- PKG-01 ' "$CONSTRAINTS"; then
+        awk '
+          /^## Protected paths/ && !inserted {
+            print "- PKG-01 (check: importlinter PKG-01): libs do not import apps. Written here by scripts/new-app.sh with the first app."
+            print ""
+            inserted = 1
+          }
+          { print }
+        ' "$CONSTRAINTS" > "$CONSTRAINTS.new"
+        mv "$CONSTRAINTS.new" "$CONSTRAINTS"
+    fi
 elif ! grep -qE '^forbidden_modules = \[.*"'"$APP_NAME"'".*\]' "$REPO_ROOT/pyproject.toml"; then
     sed -i.bak -E "s/^forbidden_modules = \[(.+)\]/forbidden_modules = [\1, \"$APP_NAME\"]/" "$REPO_ROOT/pyproject.toml"
     rm -f "$REPO_ROOT/pyproject.toml.bak"

@@ -839,7 +839,7 @@ class TestHumanFacingDocs:
 
     def test_writing_check_finds_seeded_tells(self, delivery_copy: Path) -> None:
         env = {**__import__("os").environ, "PYTHONPATH": "scripts"}
-        (delivery_copy / "seeded.md").write_text("This isn't just a tool — it's a paradigm shift that will delve into a rich tapestry of workflows.\n")
+        (delivery_copy / "seeded.md").write_text("This isn't just a tool â€” it's a paradigm shift that will delve into a rich tapestry of workflows.\n")
         r = subprocess.run([PYTHON, "-m", "delivery.writing_check", "seeded.md"], cwd=delivery_copy, env=env, capture_output=True, text=True)
         assert r.returncode == 1 and "seeded.md" in r.stdout
 
@@ -859,7 +859,7 @@ class TestIssueLog:
         assert run("close", "L-1", "--fix", "z").returncode == 0
         assert run("open").returncode == 0
         text = (delivery_copy / "working/log.md").read_text()
-        assert "## L-1" in text and "· closed" in text and "Fix: z" in text
+        assert "## L-1" in text and "Â· closed" in text and "Fix: z" in text
 
 
 # ---------------------------------------------------------------- S10 (C03, C07, C08)
@@ -1075,12 +1075,27 @@ class TestPkg01FollowsTheApps:
         assert r.returncode != 0, r.stdout
         assert "PKG-01" in r.stdout
 
-    def test_the_constraint_says_who_writes_it(self, delivery_project: Path) -> None:
-        text = (
-            delivery_project / "working/architecture/constraints.md"
+    def _constraints(self, project: Path) -> str:
+        return (
+            project / "working/architecture/constraints.md"
         ).read_text(encoding="utf-8")
-        line = next(ln for ln in text.splitlines() if "PKG-01" in ln)
+
+    def test_a_fresh_project_states_no_pkg01_constraint(
+        self, delivery_project: Path
+    ) -> None:
+        """A constraint whose check does not exist is an orphan, and make ci says so."""
+        assert not _re.search(r"^- PKG-01 ", self._constraints(delivery_project), _re.M)
+
+    def test_the_first_app_writes_the_constraint_line(self, repo: Path) -> None:
+        self._new_app(repo, "worker")
+        line = next(ln for ln in self._constraints(repo).splitlines() if "PKG-01" in ln)
         assert "new-app" in line, line
+
+    def test_the_second_app_does_not_repeat_the_line(self, repo: Path) -> None:
+        self._new_app(repo, "worker")
+        self._new_app(repo, "api")
+        lines = [ln for ln in self._constraints(repo).splitlines() if "PKG-01" in ln]
+        assert len(lines) == 1, lines
 
 
 class TestNewApp:
@@ -1102,6 +1117,20 @@ class TestNewApp:
         assert (member / "tests/test_main.py").exists()
         marker_text = (member / "tests/test_main.py").read_text()
         assert "@pytest.mark.spec" in marker_text
+
+    def test_ci_passes_before_any_app(self, delivery_copy: Path) -> None:
+        """The state every generated project is in for its first hour.
+
+        Only the post-new-app path was covered, so a check that holds once an app
+        exists and fails before one could ship green: PKG-01's constraint line
+        outlived its contract, and `make ci` reported an orphan constraint on a
+        project nobody had touched yet.
+        """
+        subprocess.run(["uv", "sync", "--quiet"], cwd=delivery_copy, check=True)
+        r = subprocess.run(
+            [require_make(), "ci"], cwd=delivery_copy, capture_output=True, text=True, check=False
+        )
+        assert r.returncode == 0, (r.stdout + r.stderr)[-3000:]
 
     def test_new_app_then_ci_passes(self, delivery_copy: Path) -> None:
         subprocess.run(["git", "init", "-q", "-b", "develop"], cwd=delivery_copy, check=True)

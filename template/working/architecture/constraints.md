@@ -24,8 +24,6 @@ when listed here. Available in `scripts/delivery/constraints.py`:
 - INV-01 (check: constraints.py INV-01) [allow: shared.config, shared.logging_setup]: the environment is read only in the listed modules.
 -->
 
-- PKG-01 (check: importlinter PKG-01): libs do not import apps. The contract is written by `scripts/new-app.sh` with the first app and extended with each one after; it does not exist while the project has none.
-
 ## Protected paths
 
 Changed only through a reviewed pull request; the agent cannot edit them in a session
