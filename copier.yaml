@@ -110,6 +110,7 @@ _exclude:
   - "{% if not enable_delivery %}MIGRATION.md{% endif %}"
   - "{% if not enable_delivery %}docs/DELIVERY-SYSTEM.md{% endif %}"
   - "{% if not enable_delivery %}docs/workflow.mermaid{% endif %}"
+  - "{% if not enable_delivery %}docs/system-overview.md{% endif %}"
 
 # Files the project owns after first generation. Never rewritten by copier
 # update, even when the template changes them.

@@ -137,7 +137,8 @@ Answer `enable_delivery: false` for the base template on its own: uv workspace, 
 pytest, pre-commit and CI, with none of the process. That is what earlier versions of this
 template produced.
 
-`docs/system-overview.md` explains the approach and the reasoning behind it.
+Generated projects get `docs/system-overview.md`, which explains the approach and the
+reasoning behind it; the source is `template/docs/system-overview.md`.
 
 ## GCP deployment
 

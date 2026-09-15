@@ -57,7 +57,7 @@ Non-breaking: adding new questions (they get defaults), adding new files, editin
 
 ## Documentation
 
-Update `docs/RATIONALE.md.jinja` alongside any structural change (new tool, new pattern, removed component). RATIONALE explains *why* each choice was made; it should stay current with the template.
+Update `template/docs/RATIONALE.md.jinja` alongside any structural change (new tool, new pattern, removed component). RATIONALE explains *why* each choice was made; it should stay current with the template.
 
 ## Commit conventions
 
