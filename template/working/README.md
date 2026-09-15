@@ -22,6 +22,7 @@ apply. Typical answers:
 
 | Answer | What happens | What you will owe |
 |---|---|---|
+| Set the project up | a project work item, offered until the first member exists | sign a project intent, then the architecture |
 | A small fix with no change in behavior | a branch, no work item | a PR with a one-line description |
 | Something the software will do differently | a work item on a branch | sign an intent, a spec, and the tests |
 | Something broken that should work | a work item, bug-fix path | sign an intent and a diagnosis |
@@ -30,7 +31,8 @@ apply. Typical answers:
 
 `make start TICKET=<key>` uses your ticket key as the work-item id and branch
 name. Claude Code runs `/start` for you when you describe a task, so you rarely
-type it.
+type it. A generated project has no members, so set-up is the first answer
+offered; its next two steps are `/intent` then `/architect`.
 
 ## The stages {#stages}
 
@@ -158,11 +160,8 @@ was missing: `make log WHAT="..." MISSING="..." [FIX="..."]`. The weekly audit
 lists the open ones. Read it before writing a rule: the failure it addresses is
 probably already there.
 
-`FIX` records what the fix will be; it does not close the entry. An entry closes
-with `make log-close ID=L-3`, and only once its fix has landed and nothing
-remains. Writing the fix does not close it, and neither does believing it works.
-Anything still outstanding is its own entry, not a reason to hold this one open.
-Entries close once.
+`FIX` records the fix; `make log-close ID=L-3` closes the entry, once the fix
+has landed. Anything still outstanding is its own entry. Entries close once.
 
 ## Decisions {#decisions}
 

@@ -77,8 +77,10 @@ def project(repo: Path, tmp_path: Path) -> Path:
 
 
 class TestStart:
-    def test_offers_on_clean_develop(self, project: Path) -> None:
-        assert start.offers(project) == ["quick-change", "change", "bug-fix", "explore", "opt-out"]
+    def test_offers_on_clean_develop(self, established: Path) -> None:
+        assert start.offers(established) == [
+            "quick-change", "change", "bug-fix", "explore", "opt-out",
+        ]
 
     def test_offers_on_bound_branch(self, project: Path) -> None:
         start.main(["--answer", "change", "--ticket", "PROJ-1", project.as_posix()])
@@ -471,3 +473,100 @@ class TestIssueLogClosesExplicitly:
         err = capsys.readouterr().err
         assert code == 1
         assert "BLOCKED" in err and "L-99" in err
+
+
+@pytest.fixture
+def fresh(project: Path) -> Path:
+    """A generated project on its first day: libs/ only, apps/ empty, no spec members."""
+    (project / "apps").mkdir()
+    (project / "working/spec").mkdir(parents=True)
+    (project / "working/spec/README.md").write_text("# Living spec\n", encoding="utf-8")
+    git(project, "add", "-A")
+    git(project, "commit", "-q", "-m", "chore: spec placeholder")
+    return project
+
+
+@pytest.fixture
+def established(fresh: Path) -> Path:
+    """The same project once it has a member: set-up no longer applies."""
+    (fresh / "apps/worker").mkdir(parents=True)
+    (fresh / "apps/worker/pyproject.toml").write_text('[project]\nname = "worker"\n', encoding="utf-8")
+    git(fresh, "add", "-A")
+    git(fresh, "commit", "-q", "-m", "feat: worker")
+    return fresh
+
+
+class TestSetUpAnswer:
+    """The first question a generated project cannot answer is what it is.
+
+    Every answer start offered assumed the project already existed: change,
+    bug-fix and explore all bind a work item to code that has not been written.
+    The architect skill is documented as running after a signed project intent,
+    and nothing created one, so the workflow that sets a project up had no door.
+    """
+
+    FRESH_OFFERS = ["set-up", "quick-change", "change", "bug-fix", "explore", "opt-out"]
+
+    def test_set_up_is_offered_first(self, fresh: Path) -> None:
+        assert start.offers(fresh)[0] == "set-up"
+
+    def test_the_other_answers_remain(self, fresh: Path) -> None:
+        assert start.offers(fresh) == self.FRESH_OFFERS
+
+    def test_it_has_a_description(self, fresh: Path) -> None:
+        assert start.ANSWERS["set-up"]
+
+    def test_the_spec_readme_is_not_a_member(self, fresh: Path) -> None:
+        """working/spec/README.md ships with the template; it describes no member."""
+        assert (fresh / "working/spec/README.md").exists()
+        assert "set-up" in start.offers(fresh)
+
+    def test_an_app_retires_the_answer(self, established: Path) -> None:
+        assert "set-up" not in start.offers(established)
+
+    def test_a_spec_member_retires_the_answer(self, fresh: Path) -> None:
+        (fresh / "working/spec/worker.md").write_text("# worker\n", encoding="utf-8")
+        assert "set-up" not in start.offers(fresh)
+
+    def test_it_creates_a_project_item(self, fresh: Path) -> None:
+        assert start.main(["--answer", "set-up", "--ticket", "SETUP-1", fresh.as_posix()]) == 0
+        st = state.read(fresh, "SETUP-1")
+        assert st.workflow == "project"
+        assert st.stage == "intent"
+        assert st.branch == "SETUP-1"
+
+    def test_it_drafts_an_intent(self, fresh: Path) -> None:
+        start.main(["--answer", "set-up", "--ticket", "SETUP-1", fresh.as_posix()])
+        text = (fresh / ".work/SETUP-1/intent.md").read_text(encoding="utf-8")
+        assert "SETUP-1" in text
+        assert "workflow: project" in text
+
+    def test_it_drafts_from_the_shipped_template(self, fresh: Path) -> None:
+        """The skill's template is the one source; the script does not carry a second."""
+        tpl = fresh / start.PROJECT_INTENT_TEMPLATE
+        tpl.parent.mkdir(parents=True)
+        tpl.write_text(
+            "# Intent: <title>\nid: <work-id>\nworkflow: project\n\n## Members\n",
+            encoding="utf-8",
+        )
+        start.main(["--answer", "set-up", "--ticket", "SETUP-1", fresh.as_posix()])
+        text = (fresh / ".work/SETUP-1/intent.md").read_text(encoding="utf-8")
+        assert "## Members" in text
+        assert "<work-id>" not in text and "<title>" not in text
+
+    def test_it_names_the_next_two_steps(
+        self, fresh: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        start.main(["--answer", "set-up", "--ticket", "SETUP-1", fresh.as_posix()])
+        out = capsys.readouterr().out
+        assert "/intent" in out and "/architect" in out
+
+    def test_it_needs_a_ticket(self, fresh: Path, capsys: pytest.CaptureFixture[str]) -> None:
+        assert start.main(["--answer", "set-up", fresh.as_posix()]) == 1
+        err = capsys.readouterr().err
+        assert "BLOCKED" in err and "ticket" in err, err
+        assert not (fresh / ".work").exists()
+
+    def test_it_is_not_offered_once_bound(self, fresh: Path) -> None:
+        start.main(["--answer", "set-up", "--ticket", "SETUP-1", fresh.as_posix()])
+        assert start.offers(fresh) == ["continue", "abandon"]

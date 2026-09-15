@@ -340,6 +340,31 @@ class TestScaffoldCommit:
         assert self._git(plain_project, "log", "-1", "--format=%s") == self.SUBJECT
 
 
+class TestSetUpShipsWithTheProject:
+    """The set-up answer needs its template and its documentation in the output."""
+
+    def test_the_project_intent_template_ships(self, delivery_project: Path) -> None:
+        tpl = delivery_project / ".claude/skills/intent/templates/intent-project.md"
+        assert tpl.exists()
+        assert "workflow: project" in tpl.read_text(encoding="utf-8")
+
+    def test_the_intent_skill_names_it(self, delivery_project: Path) -> None:
+        skill = (delivery_project / ".claude/skills/intent/SKILL.md").read_text(encoding="utf-8")
+        assert "intent-project.md" in skill
+
+    def test_start_offers_it_on_a_fresh_project(self, delivery_copy: Path) -> None:
+        """End to end: generation leaves a project with no members, so it is offered."""
+        env = {**__import__("os").environ, "PYTHONPATH": "scripts"}
+        r = subprocess.run(
+            [PYTHON, "-m", "delivery.start"],
+            cwd=delivery_copy, env=env, capture_output=True, text=True, check=False,
+        )
+        assert r.returncode == 0, r.stdout + r.stderr
+        for answer in ("set-up", "quick-change", "change", "bug-fix", "explore", "opt-out"):
+            assert answer in r.stdout, (answer, r.stdout)
+        assert r.stdout.index("set-up") < r.stdout.index("quick-change")
+
+
 class TestGeneratedFilesEndCleanly:
     """end-of-file-fixer must find nothing to fix in what generation committed.
 

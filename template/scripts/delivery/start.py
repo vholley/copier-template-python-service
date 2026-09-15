@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 ANSWERS = {
+    "set-up": "Set the project up (what it is for, its members, its architecture)",
     "quick-change": "Make a quick change (typo, docs, config, dependency bump)",
     "change": "Add or change behavior",
     "bug-fix": "Fix a bug",
@@ -28,12 +29,30 @@ ANSWERS = {
     "keep-exploring": "Keep exploring",
     "attach": "Attach this branch to a new work item",
 }
-WORKFLOW_FOR = {"change": "change", "bug-fix": "change-defect", "explore": "spike"}
+WORKFLOW_FOR = {
+    "set-up": "project",
+    "change": "change",
+    "bug-fix": "change-defect",
+    "explore": "spike",
+}
+PROJECT_INTENT_TEMPLATE = Path(".claude/skills/intent/templates/intent-project.md")
 MORE = "working/README.md#start"
 
 
 def _has_changes(repo: Path) -> bool:
     return gitx.run(repo, "status", "--porcelain", "--", "libs", "apps", check=False).strip() != ""
+
+
+def _is_fresh(repo: Path) -> bool:
+    """True while the project has no members: nothing to change yet, only to define.
+
+    working/spec/README.md ships with the template and describes no member, so it
+    does not count. The first app or the first spec member retires the answer.
+    """
+    if any((repo / "apps").glob("*/pyproject.toml")):
+        return False
+    spec = (repo / "working" / "spec").glob("*.md")
+    return not [p for p in spec if p.name != "README.md"]
 
 
 def offers(repo: Path) -> list[str]:
@@ -52,12 +71,30 @@ def offers(repo: Path) -> list[str]:
         )
     if branch not in ("develop", "main") and _has_changes(repo):
         return ["quick-change", "attach"]
-    return ["quick-change", "change", "bug-fix", "explore", "opt-out"]
+    base = ["quick-change", "change", "bug-fix", "explore", "opt-out"]
+    return ["set-up", *base] if _is_fresh(repo) else base
+
+
+_PROJECT_FALLBACK = (
+    "# Intent: <title>\nid: <work-id>\nworkflow: project\nrisk: standard\n\n"
+    "## What\n\n## Why\n\n## Members\n\n## Constraints\n\n"
+    "## Non-goals\n\n## Done means\n\n## Open questions\n"
+)
+
+
+def _project_intent(repo: Path, item: str) -> str:
+    """The stub for a project item, from the intent skill's template when it ships."""
+    tpl = repo / PROJECT_INTENT_TEMPLATE
+    text = tpl.read_text(encoding="utf-8") if tpl.exists() else _PROJECT_FALLBACK
+    return text.replace("<work-id>", item).replace("<title>", item)
 
 
 def _draft_intent(repo: Path, item: str, notes: str = "") -> None:
     d = state.item_dir(repo, item)
     workflow = state.load_unchecked(repo, item).workflow
+    if workflow == "project":
+        (d / "intent.md").write_text(_project_intent(repo, item), encoding="utf-8")
+        return
     body = (
         f"# Intent: {item}\nid: {item}\nworkflow: {workflow}\nrisk: standard\n\n"
         "## What\n\n## Why\n\n## Constraints\n\n## Non-goals\n\n"
@@ -65,7 +102,7 @@ def _draft_intent(repo: Path, item: str, notes: str = "") -> None:
     )
     if notes:
         body += f"\n## Notes carried from the spike\n{notes}"
-    (d / "intent.md").write_text(body)
+    (d / "intent.md").write_text(body, encoding="utf-8")
 
 
 def _need_ticket(ticket: str | None) -> int | None:
@@ -102,11 +139,16 @@ def _new_item(answer: str) -> Callable[[Path, str | None], int]:
         workflow = WORKFLOW_FOR[answer]
         state.create(repo, ticket, workflow, ticket)
         if workflow == "spike":
-            (state.item_dir(repo, ticket) / "notes.md").write_text("# Spike notes\n")
+            (state.item_dir(repo, ticket) / "notes.md").write_text(
+                "# Spike notes\n", encoding="utf-8"
+            )
             print(
                 f"Spike {ticket} on branch {ticket}. Nothing merges from here; "
                 "run make start when you know what to build."
             )
+        elif workflow == "project":
+            _draft_intent(repo, ticket)
+            print(f"Project {ticket} on branch {ticket}. Next: /intent, then /architect")
         else:
             _draft_intent(repo, ticket)
             print(f"Work item {ticket} on branch {ticket}. Next: /intent")
@@ -176,6 +218,7 @@ def _noop(_repo: Path, _ticket: str | None) -> int:
 
 
 ACTIONS: dict[str, Callable[[Path, str | None], int]] = {
+    "set-up": _new_item("set-up"),
     "quick-change": _quick_change,
     "change": _new_item("change"),
     "bug-fix": _new_item("bug-fix"),
