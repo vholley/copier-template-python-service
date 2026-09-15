@@ -42,8 +42,7 @@ jobs:
 
       - name: Test
         run: make test
-{% endraw %}{%- if enable_delivery %}
-
+{% endraw %}{% if enable_delivery %}
       - name: Constraints (import-linter + constraints.py)
         run: make constraints
 
@@ -55,4 +54,4 @@ jobs:
 
       - name: Deployable surface
         run: make deploy-surface
-{%- endif %}
+{% endif %}

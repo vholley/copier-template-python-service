@@ -340,6 +340,44 @@ class TestScaffoldCommit:
         assert self._git(plain_project, "log", "-1", "--format=%s") == self.SUBJECT
 
 
+class TestGeneratedFilesEndCleanly:
+    """end-of-file-fixer must find nothing to fix in what generation committed.
+
+    Otherwise the engineer's first `git commit` fails on files they did not write,
+    and the scaffold commit carries a diff the very next hook run wants to undo.
+    A file holding nothing but a newline is the case that is easy to miss: the
+    hook truncates it to empty rather than leaving the newline alone.
+
+    Tracked files only, which is what pre-commit sees. Generation writes docs/
+    too, but .gitignore excludes it, so no hook ever reads those.
+    """
+
+    @pytest.fixture(params=["delivery", "plain"])
+    def project(self, request: pytest.FixtureRequest) -> Path:
+        return request.getfixturevalue(f"{request.param}_project")
+
+    def test_no_file_is_left_for_end_of_file_fixer(self, project: Path) -> None:
+        tracked = subprocess.run(
+            ["git", "ls-files"], cwd=project, capture_output=True, text=True, check=True
+        ).stdout.split()
+        assert tracked, "generation left nothing committed"
+        offenders: list[tuple[str, str]] = []
+        for rel in sorted(tracked):
+            path = project / rel
+            if not path.is_file():
+                continue
+            data = path.read_bytes()
+            if not data:
+                continue
+            if not data.strip():
+                offenders.append((rel, "holds only whitespace; the hook empties it"))
+            elif not data.endswith(b"\n"):
+                offenders.append((rel, "no final newline"))
+            elif data.endswith(b"\n\n"):
+                offenders.append((rel, "blank line at end of file"))
+        assert offenders == [], offenders
+
+
 class TestDeliveryAnswers:
     """C02: the delivery answers land in CODEOWNERS and budgets.md; defaults render."""
 
