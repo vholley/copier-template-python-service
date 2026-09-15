@@ -340,6 +340,58 @@ class TestScaffoldCommit:
         assert self._git(plain_project, "log", "-1", "--format=%s") == self.SUBJECT
 
 
+class TestBugNotesGoToTheIssueLog:
+    """A bug note belongs where the weekly audit reads, not in the agent's rules.
+
+    branching.md told the agent to append what it learned to project.md. That file
+    is under .claude/, which the edit guard protects, so the instruction could not
+    be followed; and nothing reads it, so a note landing there is invisible to the
+    audit that exists to find repeated failures.
+    """
+
+    def _rules(self, project: Path, name: str) -> str:
+        return (project / ".claude" / "rules" / name).read_text(encoding="utf-8")
+
+    def test_branching_sends_bugs_to_the_log(self, delivery_project: Path) -> None:
+        text = self._rules(delivery_project, "branching.md")
+        section = text.split("## Bug and issue documentation")[1]
+        assert "make log" in section
+
+    def test_branching_does_not_name_project_md_as_a_write_target(
+        self, delivery_project: Path
+    ) -> None:
+        section = self._rules(delivery_project, "branching.md").split(
+            "## Bug and issue documentation"
+        )[1]
+        assert "Project-specific notes" not in section
+        assert "project.md" not in section
+
+    def test_branching_says_not_to_edit_the_rules(self, delivery_project: Path) -> None:
+        section = self._rules(delivery_project, "branching.md").split(
+            "## Bug and issue documentation"
+        )[1]
+        assert ".claude/" in section
+
+    def test_nothing_points_bug_notes_at_untracked_docs(self, delivery_project: Path) -> None:
+        """docs/ is in .gitignore, so a record written there is lost on the next clone."""
+        section = self._rules(delivery_project, "branching.md").split(
+            "## Bug and issue documentation"
+        )[1]
+        assert "docs/incidents" not in section
+
+    def test_the_rules_have_no_unterminated_code_fence(self, delivery_project: Path) -> None:
+        for name in ("branching.md", "project.md"):
+            fences = self._rules(delivery_project, name).count("```")
+            assert fences % 2 == 0, (name, fences)
+
+    def test_project_md_says_the_agent_does_not_write_there(
+        self, delivery_project: Path
+    ) -> None:
+        text = self._rules(delivery_project, "project.md")
+        assert "agent" in text
+        assert "pull request" in text
+
+
 class TestSetUpShipsWithTheProject:
     """The set-up answer needs its template and its documentation in the output."""
 
