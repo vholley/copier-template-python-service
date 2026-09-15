@@ -18,7 +18,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from delivery import gitx, paths, state
+from delivery import block, gitx, paths, state
 from delivery.block import render
 
 PROTECTED_PREFIXES = ("working/architecture/", "working/standards/", ".claude/", "scripts/")
@@ -213,6 +213,7 @@ def classify(repo: Path, base: str) -> Tier:
     )
 
 
+@block.guard_unborn
 def main(argv: list[str]) -> int:
     """Entry point; see module docstring."""
     if "--base" not in argv:
@@ -229,12 +230,15 @@ def main(argv: list[str]) -> int:
     base = argv[argv.index("--base") + 1]
     rest = [a for i, a in enumerate(argv) if not a.startswith("--") and argv[i - 1] != "--base"]
     repo = Path(rest[0]) if rest else Path.cwd()
+    # Read the branch before classifying. On a repository with no commits there
+    # is nothing to diff, and classify() would answer "trivial" -- a false
+    # answer, where the honest one is that the repository is not ready yet.
+    branch = gitx.current_branch(repo)
     t = classify(repo, base)
     print(f"tier: {t.tier}")
     for r in t.reasons:
         print(f"because: {r}")
     if t.tier != "trivial":
-        branch = gitx.current_branch(repo)
         try:
             bound = state.bound_item(repo, branch)
         except state.ConsistencyError:

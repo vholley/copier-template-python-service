@@ -9,7 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from delivery import gitx, state, status
+from delivery import block, gitx, state, status
 from delivery.block import fail
 
 if TYPE_CHECKING:
@@ -190,6 +190,7 @@ ACTIONS: dict[str, Callable[[Path, str | None], int]] = {
 }
 
 
+@block.guard_unborn
 def main(argv: list[str]) -> int:
     """Entry point: --list, or --answer KEY [--ticket ID]."""
     rest = [

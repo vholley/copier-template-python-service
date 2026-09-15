@@ -461,7 +461,10 @@ def run(event: str, payload: dict[str, object], repo: Path) -> tuple[int, str, s
     handler = EVENTS.get(event)
     if handler is None:
         return 0, "", ""
-    return handler(payload, repo)
+    try:
+        return handler(payload, repo)
+    except gitx.UnbornBranchError:
+        return 2, "", block.unborn_text()
 
 
 def main(argv: list[str]) -> int:

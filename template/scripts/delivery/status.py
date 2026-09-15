@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from delivery import gitx, registry, state
+from delivery import block, gitx, registry, state
 
 KIND = {
     "change": "change (add or change behavior)",
@@ -106,6 +106,7 @@ def report(repo: Path) -> str:
     return "\n".join(lines) + "\n"
 
 
+@block.guard_unborn
 def main(argv: list[str]) -> int:
     """Entry point."""
     repo = Path(argv[0]) if argv else Path.cwd()

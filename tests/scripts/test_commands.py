@@ -20,7 +20,7 @@ from pathlib import Path
 
 import pytest
 
-from delivery import accept, audit_observations, help as help_cmd, loop_report, observe, post_merge, start, state, status, vendored_check
+from delivery import accept, audit_observations, compute_tier, gitx, help as help_cmd, hooks, loop_report, observe, post_merge, start, state, state_cli, status, vendored_check
 
 
 def git(repo: Path, *args: str) -> str:
@@ -303,3 +303,73 @@ class TestHousekeeping:
         git(project, "commit", "-q", "-m", "feat: a\n\nLabels: tier-override, break-glass\n")
         text = loop_report.render(project, base="develop")
         assert "tier-override" in text and "break-glass" in text
+
+
+# ------------------------------------------------- unborn branch (a repo with no commits)
+
+
+SCAFFOLD = 'git add -A && git commit -m "chore: generate from copier-template-python-service"'
+
+
+@pytest.fixture
+def unborn(tmp_path: Path) -> Path:
+    """A repository with a branch but no commits, so HEAD does not resolve.
+
+    Generation makes the scaffold commit, but stops short of it when git has no
+    author identity. The engineer meets this state next, and every command has to
+    say what to do rather than raise.
+    """
+    subprocess.run(["git", "init", "-q", "-b", "develop"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.email", "t@example.invalid"], cwd=tmp_path, check=True)
+    (tmp_path / "README.md").write_text("x\n", encoding="utf-8")
+    return tmp_path
+
+
+class TestUnbornBranch:
+    """No traceback, a four-line block, and the next command is the scaffold commit."""
+
+    def test_gitx_raises_a_named_error(self, unborn: Path) -> None:
+        with pytest.raises(gitx.UnbornBranchError):
+            gitx.current_branch(unborn)
+
+    def test_start_blocks(self, unborn: Path, capsys: pytest.CaptureFixture[str]) -> None:
+        code = start.main([str(unborn)])
+        err = capsys.readouterr().err
+        assert code == 1, err
+        assert "BLOCKED" in err and SCAFFOLD in err and "Traceback" not in err
+
+    def test_status_blocks(self, unborn: Path, capsys: pytest.CaptureFixture[str]) -> None:
+        code = status.main([str(unborn)])
+        err = capsys.readouterr().err
+        assert code == 1, err
+        assert "BLOCKED" in err and SCAFFOLD in err and "Traceback" not in err
+
+    def test_compute_tier_blocks(self, unborn: Path, capsys: pytest.CaptureFixture[str]) -> None:
+        code = compute_tier.main(["--base", "develop", str(unborn)])
+        err = capsys.readouterr().err
+        assert code == 1, err
+        assert "BLOCKED" in err and SCAFFOLD in err and "Traceback" not in err
+
+    def test_hooks_block_with_exit_two(self, unborn: Path) -> None:
+        """Hooks use exit 2: that is what Claude Code reads as a block."""
+        code, _out, err = hooks.run("prompt", {}, unborn)
+        assert code == 2, err
+        assert "BLOCKED" in err and SCAFFOLD in err and "Traceback" not in err
+
+    def test_the_block_is_four_lines(self, unborn: Path, capsys: pytest.CaptureFixture[str]) -> None:
+        start.main([str(unborn)])
+        lines = [ln for ln in capsys.readouterr().err.splitlines() if ln.strip()]
+        assert len(lines) == 4, lines
+        assert lines[0].startswith("BLOCKED")
+        assert lines[1].startswith("WHY")
+        assert lines[2].startswith("NEXT")
+        assert lines[3].startswith("MORE")
+
+    def test_state_cli_blocks(self, unborn: Path, capsys: pytest.CaptureFixture[str]) -> None:
+        code = state_cli.main(["bound", str(unborn)])
+        assert code == 1, capsys.readouterr().err
+
+    def test_accept_blocks(self, unborn: Path, capsys: pytest.CaptureFixture[str]) -> None:
+        code = accept.main(["--stage", "opt-out", str(unborn)])
+        assert code in (1, 2), capsys.readouterr().err
