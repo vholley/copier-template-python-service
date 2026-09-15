@@ -8,8 +8,11 @@ are listed in `constraints-baseline.txt`, which may only shrink.
 
 ## Layers
 
-Within a member, code depends forward only: types → config → repo → service → runtime → ui.
+Within a member, code depends forward only: types → config → repo → service → runtime.
 Cross-cutting concerns (logging, telemetry) enter through a single provider module.
+A project that grows a UI layer adds it to the end of this chain and to the end of
+each app's layers contract; both have to name it, or the check and the document
+disagree about what the model is.
 
 - LAYER-<app> (check: importlinter LAYER-<app>): each app declares its layers contract
   in `pyproject.toml` (`scripts/new-app.sh` writes it).

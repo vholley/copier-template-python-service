@@ -1009,6 +1009,70 @@ class TestCopierUpdate:
 # ------------------------------------------------------------------- S11 (C13)
 
 
+class TestTheLayerModelIsTheOneThatShips:
+    """A layer the template declares but never creates is a rule nobody can break.
+
+    constraints.md ended the chain at `ui`. No app-template directory, no
+    new-app contract and no check has ever mentioned it, so the one document an
+    engineer reads to learn the layer model described a layer that does not exist
+    anywhere in the project it describes.
+    """
+
+    def _declared(self, project: Path) -> list[str]:
+        """The chain as constraints.md states it, lowest layer first."""
+        text = (
+            project / "working/architecture/constraints.md"
+        ).read_text(encoding="utf-8")
+        line = next(ln for ln in text.splitlines() if "depends forward only" in ln)
+        chain = line.split(":", 1)[1]
+        return [part.strip().rstrip(".") for part in chain.split("\u2192")]
+
+    def _contracted(self, project: Path, app: str) -> list[str]:
+        """The chain as the generated import-linter contract states it, lowest first."""
+        body = (project / "pyproject.toml").read_text(encoding="utf-8")
+        block = body.split(f'name = "LAYER-{app}')[1].split("layers = [")[1].split("]")[0]
+        return [m.split(".", 1)[1] for m in _re.findall(r'"([^"]+)"', block)][::-1]
+
+    @pytest.fixture
+    def with_app(self, delivery_copy: Path) -> Path:
+        subprocess.run(["git", "init", "-q", "-b", "develop"], cwd=delivery_copy, check=True)
+        r = subprocess.run(
+            [require_bash(), "scripts/new-app.sh", "worker"],
+            cwd=delivery_copy, capture_output=True, text=True, check=False,
+        )
+        assert r.returncode == 0, r.stderr
+        return delivery_copy
+
+    def test_the_declared_chain_has_no_phantom_layer(self, delivery_project: Path) -> None:
+        assert self._declared(delivery_project) == [
+            "types", "config", "repo", "service", "runtime",
+        ]
+
+    def test_the_contract_names_the_declared_chain(self, with_app: Path) -> None:
+        assert self._contracted(with_app, "worker") == self._declared(with_app)
+
+    def test_the_app_template_ships_the_declared_directories(
+        self, delivery_project: Path
+    ) -> None:
+        src = delivery_project / "app-template/src/__APP_NAME__"
+        dirs = {d.name for d in src.iterdir() if d.is_dir() and not d.name.startswith("__")}
+        assert dirs == set(self._declared(delivery_project))
+
+    def test_a_project_that_wants_a_ui_layer_is_told_what_to_do(
+        self, delivery_project: Path
+    ) -> None:
+        """Dropping the layer must not read as forbidding it."""
+        text = (
+            delivery_project / "working/architecture/constraints.md"
+        ).read_text(encoding="utf-8")
+        section = text.split("## Layers")[1].split("## ")[0]
+        chain = next(ln for ln in section.splitlines() if "depends forward only" in ln)
+        assert "ui" not in chain.lower(), chain
+        guidance = section.replace(chain, "")
+        assert "UI layer" in guidance
+        assert "contract" in guidance
+
+
 class TestSharedIsEnabledAndTested:
     """The one member every project starts with had no tests and ran none.
 
