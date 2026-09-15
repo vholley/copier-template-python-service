@@ -154,9 +154,15 @@ next weekly audit unless they become work.
 ## The issue log {#log}
 
 `working/log.md` is the running record of what went wrong and what definition
-was missing: `make log WHAT="..." MISSING="..." [FIX="..."]`. Entries close
-once. The weekly audit lists the open ones. Read it before writing a rule: the
-failure it addresses is probably already there.
+was missing: `make log WHAT="..." MISSING="..." [FIX="..."]`. The weekly audit
+lists the open ones. Read it before writing a rule: the failure it addresses is
+probably already there.
+
+`FIX` records what the fix will be; it does not close the entry. An entry closes
+with `make log-close ID=L-3`, and only once its fix has landed and nothing
+remains. Writing the fix does not close it, and neither does believing it works.
+Anything still outstanding is its own entry, not a reason to hold this one open.
+Entries close once.
 
 ## Decisions {#decisions}
 

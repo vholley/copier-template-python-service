@@ -20,7 +20,7 @@ from pathlib import Path
 
 import pytest
 
-from delivery import accept, audit_observations, compute_tier, gitx, help as help_cmd, hooks, loop_report, observe, post_merge, start, state, state_cli, status, vendored_check
+from delivery import accept, audit_observations, compute_tier, gitx, help as help_cmd, hooks, log, loop_report, observe, post_merge, start, state, state_cli, status, vendored_check
 
 
 def git(repo: Path, *args: str) -> str:
@@ -373,3 +373,101 @@ class TestUnbornBranch:
     def test_accept_blocks(self, unborn: Path, capsys: pytest.CaptureFixture[str]) -> None:
         code = accept.main(["--stage", "opt-out", str(unborn)])
         assert code in (1, 2), capsys.readouterr().err
+
+
+@pytest.fixture
+def logged(tmp_path: Path) -> Path:
+    """A project with an empty issue log."""
+    (tmp_path / "working").mkdir()
+    (tmp_path / "working" / "log.md").write_text(
+        "# Issue log\n\nAppend-only. Status moves from open to closed only.\n", encoding="utf-8"
+    )
+    return tmp_path
+
+
+class TestIssueLogClosesExplicitly:
+    """Recording a fix and closing an entry are two acts, not one.
+
+    `make log FIX=...` used to write the entry closed, so the log said "resolved"
+    at the moment the fix was typed -- before it was reviewed, merged, or shown to
+    work. The weekly audit reads open entries, so anything written with a fix was
+    invisible to it from birth.
+    """
+
+    def _text(self, repo: Path) -> str:
+        return (repo / "working" / "log.md").read_text(encoding="utf-8")
+
+    def _status(self, repo: Path, lid: str) -> str:
+        return next(e["status"] for e in log.entries(self._text(repo)) if e["id"] == lid)
+
+    def test_an_entry_without_a_fix_is_open(self, logged: Path) -> None:
+        lid = log.add(logged, "session", "hook fired wrongly", "no rule for it", "")
+        assert self._status(logged, lid) == "open"
+
+    def test_recording_a_fix_leaves_the_entry_open(self, logged: Path) -> None:
+        """The point of the item: a written fix is not a landed fix."""
+        lid = log.add(logged, "session", "hook fired wrongly", "no rule for it", "widen the glob")
+        assert self._status(logged, lid) == "open"
+        assert "widen the glob" in self._text(logged)
+
+    def test_closing_marks_it_closed(self, logged: Path) -> None:
+        lid = log.add(logged, "session", "w", "m", "widen the glob")
+        assert log.close(logged, lid, "") is True
+        assert self._status(logged, lid) == "closed"
+
+    def test_closing_keeps_the_fix_already_recorded(self, logged: Path) -> None:
+        lid = log.add(logged, "session", "w", "m", "widen the glob")
+        log.close(logged, lid, "")
+        assert "widen the glob" in self._text(logged)
+
+    def test_closing_an_entry_with_no_fix_takes_one(self, logged: Path) -> None:
+        lid = log.add(logged, "session", "w", "m", "")
+        log.close(logged, lid, "reverted the rule")
+        assert "reverted the rule" in self._text(logged)
+        assert self._status(logged, lid) == "closed"
+
+    def test_an_entry_closes_once(self, logged: Path) -> None:
+        lid = log.add(logged, "session", "w", "m", "f")
+        log.close(logged, lid, "")
+        assert log.close(logged, lid, "") is False
+
+    def test_open_lists_a_fixed_but_unclosed_entry(
+        self, logged: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        lid = log.add(logged, "session", "w", "m", "widen the glob")
+        code = log.main(["open", str(logged)])
+        out = capsys.readouterr().out
+        assert code == 1, out
+        assert lid in out
+
+    def test_open_is_quiet_once_everything_is_closed(
+        self, logged: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        lid = log.add(logged, "session", "w", "m", "f")
+        log.close(logged, lid, "")
+        assert log.main(["open", str(logged)]) == 0
+        assert capsys.readouterr().out.strip() == ""
+
+    def test_add_through_main_does_not_close(
+        self, logged: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """`make log` is this call; it may never be the thing that closes."""
+        code = log.main(
+            ["add", "--what", "w", "--missing", "m", "--fix", "widen the glob", str(logged)]
+        )
+        assert code == 0, capsys.readouterr().err
+        assert log.entries(self._text(logged))[0]["status"] == "open"
+
+    def test_close_through_main(self, logged: Path, capsys: pytest.CaptureFixture[str]) -> None:
+        lid = log.add(logged, "session", "w", "m", "f")
+        code = log.main(["close", lid, str(logged)])
+        assert code == 0, capsys.readouterr().err
+        assert self._status(logged, lid) == "closed"
+
+    def test_closing_an_unknown_id_blocks(
+        self, logged: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        code = log.main(["close", "L-99", str(logged)])
+        err = capsys.readouterr().err
+        assert code == 1
+        assert "BLOCKED" in err and "L-99" in err
